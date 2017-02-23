@@ -166,16 +166,17 @@ class Medium(object):
             if message is not None:
                 self.send(message, agent, receiver)
 
-    def transmissionDone(self):
-        self.busy = False
-        self.checkTxQueues()
-
     def setBusy(self, duration):
         if self.busy:
             raise Exception('Medium already busy')
         self.busy = True
+
+        def transmissionDone(medium):
+            medium.busy = False
+            medium.checkTxQueues()
+
         self.scheduler.registerEventRel(\
-                Callback(self.transmissionDone), duration)
+                Callback(transmissionDone, medium=self), duration)
 
     def isBusy(self):
         return self.busy
