@@ -98,6 +98,7 @@ class ProtocolAgent(object):
         self.scheduler = scheduler
         self.medium = None
         self.logger = params.get('logger', None)
+        self.txQueue = Queue.Queue()
 
     def getName(self):
         return self.name
@@ -112,16 +113,26 @@ class ProtocolAgent(object):
         # receiver might be agent name or agent object instance
         if not self.medium:
             raise Exception('Agent "{0}" not registered with any medium'.format(self.name))
-        self.medium.send(message, self, receiver)
+        # add message to transmission queue
+        self.txQueue.put((message, receiver))
+        self.medium.checkTxQueues()
 
     # called by Medium class
     def receive(self, message, sender):
         # sender is agent object instance
         if self.logger:        
             header = '[{0:>.3f}]'.format(self.scheduler.getTime())
-            text = '{0} received message {1} from {2}'.format(
+            text = '--> {0} received message {1} from {2}'.format(
                     self.name, str(message), sender.getName())
             self.logger.log(header, text)
+
+    # called by Medium class
+    def retrieveMessage(self):
+        if self.txQueue.empty():
+            # no message in the transmission queue
+            return None, None
+        else:
+            return self.txQueue.get()
 
 
 class Medium(object):
@@ -129,7 +140,7 @@ class Medium(object):
     def __init__(self, scheduler, **params):
         self.scheduler = scheduler
         self.agents = {}
-        self.busyUntil = None
+        self.busy = False
         self.data_rate = params.get('data_rate', None)    # None means 'unlimited'
         self.msg_loss_rate = params.get('msg_loss_rate', 0.)
         self.bit_loss_rate = params.get('bit_loss_rate', 0.)
@@ -141,21 +152,33 @@ class Medium(object):
         agent.registerMedium(self)
         self.agents[agent.getName()] = agent
 
-    def setBusyUntil(self, busyUntil):
-        if busyUntil < self.scheduler.getTime():
-            raise Exception('Cannot set medium busy until a past of in time')
-        if self.busyUntil < busyUntil:
-            self.busyUntil = busyUntil
+    def checkTxQueues(self):
+        """
+        Trigger the medium to check for pending messages
+        in transmission queues of protocol agents
+        """
+        # don't need to do anything if medium is busy
+        if not self.isBusy():
+            for agent in self.agents.values():
+                message, receiver = agent.retrieveMessage()
+                if message is not None:
+                    break
+            if message is not None:
+                self.send(message, agent, receiver)
+
+    def transmissionDone(self):
+        self.busy = False
+        self.checkTxQueues()
+
+    def setBusy(self, duration):
+        if self.busy:
+            raise Exception('Medium already busy')
+        self.busy = True
+        self.scheduler.registerEventRel(\
+                Callback(self.transmissionDone), duration)
 
     def isBusy(self):
-        if self.busyUntil is not None and \
-                self.busyUntil > self.scheduler.getTime():
-            return True
-        else:
-            return False
-
-    def isBusyUntil(self):
-        return self.busyUntil if self.isBusy() else None
+        return self.busy
 
     def getMsgLossProp(self, message):
         """
@@ -173,12 +196,8 @@ class Medium(object):
         if isinstance(sender, str):
             sender = self.agents[sender]
 
-        if self.isBusy():
-            # medium is busy --> register a callback for transmission
-            self.scheduler.registerEventAbs(Callback(self.send, \
-                    message=message, sender=sender, receiver=receiver), \
-                    self.isBusyUntil())
-        else:
+        if not self.isBusy():
+
             # medium is free --> transmit message
 
             # duration of the transmission given by data_rate
@@ -190,11 +209,11 @@ class Medium(object):
 
             if self.logger:        
                 header = '[{0:>.3f}]'.format(self.scheduler.getTime())
-                text = '{0} sending message {1} (loss prop. = {2})'.format(
+                text = '<-- {0} sending message {1} (loss prop. = {2})'.format(
                         sender.getName(), str(message), loss_prop)
                 self.logger.log(header, text)
 
-            self.setBusyUntil(self.scheduler.getTime() + duration)
+            self.setBusy(duration)
 
             if not receiver:
                 # this is a boradcast
