@@ -78,13 +78,13 @@ class DTLSClient(ProtocolAgent):
 
         # client received ServerHello message
     
-        if message.getMessage() in DTLSClient.msgListFlight2 and message.getMessage() not in [k for k in self.receivedFlight2]:
+        if message.getMessage() in DTLSClient.msgListFlight2 and message.getMessage() not in self.receivedFlight2:
             self.receivedFlight2[message.getMessage()] = True            
             if [self.receivedFlight2.get(msg, False) \
                     for msg in DTLSClient.msgListFlight2].count(False) == 0:
                 self.transmitFlight3()
 
-        elif message.getMessage() in DTLSClient.msgListFlight4 and message.getMessage() not in [l for l in self.receivedFlight4]:
+        elif message.getMessage() in DTLSClient.msgListFlight4 and message.getMessage() not in self.receivedFlight4:
             self.receivedFlight4[message.getMessage()] = True            
             if [self.receivedFlight4.get(msg, False) \
                     for msg in DTLSClient.msgListFlight4].count(False) == 0:
@@ -132,7 +132,7 @@ class DTLSServer(ProtocolAgent):
             self.transmitFlight2()
             
             
-        elif message.getMessage() in DTLSServer.msgListFlight3 and message.getMessage() not in [k for k in self.receivedFlight3]:
+        elif message.getMessage() in DTLSServer.msgListFlight3 and message.getMessage() not in self.receivedFlight3:
             self.receivedFlight3[message.getMessage()] = True            
             if [self.receivedFlight3.get(msg, False) \
                     for msg in DTLSServer.msgListFlight3].count(False) == 0:
@@ -162,7 +162,7 @@ def main(argv):
     server = DTLSServer('server1', scheduler, logger=logger)
     client = DTLSClient('client', scheduler, logger=logger)
 
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, logger=logger)
+    medium = Medium(scheduler, data_rate=24000./8, msg_loss_rate=0.1, logger=logger)
     medium.registerAgent(server)
     medium.registerAgent(client)
 
