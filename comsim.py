@@ -220,9 +220,16 @@ class Medium(object):
                 # this is a boradcast
                 for agent in self.agents.values():     
                     # let sender not receive its own message
-                    if agent != sender and random.random() >= loss_prop:
-                        self.scheduler.registerEventRel(Callback(agent.receive, \
-                                message=message, sender=sender), duration)
+                    if agent != sender:
+                        if random.random() >= loss_prop:
+                            self.scheduler.registerEventRel(Callback(agent.receive, \
+                                    message=message, sender=sender), duration)
+                        else:
+                            if self.logger:        
+                                header = '[{0:>.3f}]'.format(self.scheduler.getTime())
+                                text = '<-- Lost message {1} sent by {0}'.format(
+                                        sender.getName(), str(message))
+                                self.logger.log(header, text)
             else:
                 # make receiver agent name
                 if isinstance(receiver, ProtocolAgent):
@@ -231,6 +238,13 @@ class Medium(object):
                     self.scheduler.registerEventRel(Callback( \
                             self.agents[receiver].receive, \
                             message=message, sender=sender), duration)
+                else:
+                    if self.logger:        
+                        header = '[{0:>.3f}]'.format(self.scheduler.getTime())
+                        text = '<-- Lost message {1} sent by {0}'.format(
+                                sender.getName(), str(message))
+                        self.logger.log(header, text)
+
 
 
 
