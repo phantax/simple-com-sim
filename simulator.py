@@ -171,6 +171,8 @@ def main(argv):
     while not scheduler.empty():
         scheduler.run()
 
+    # scheduler.getTime() is handshake duration
+
     pass
 
 
