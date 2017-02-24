@@ -54,6 +54,7 @@ class DTLSClient(ProtocolAgent):
         self.transmit(Message(13, 'ChangeCipherSpec'))
         self.transmit(Message(37, 'Finished'))
 		
+
     	self.scheduler.registerEventRel(Callback(self.checkFlight3), 3.0)
 	
 	
