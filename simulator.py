@@ -136,7 +136,7 @@ class DTLSServer(ProtocolAgent):
         #Counter for Flight4 Retransmission
         self.flight4_Retransmission_Count=0     
 	
-
+        self.Handshake_Time=0
     def transmitFlight4(self):
         self.transmit(Message(13, 'ServerChangeCipherSpec'))
         self.transmit(Message(37, 'ServerFinished'))
@@ -193,8 +193,9 @@ class DTLSServer(ProtocolAgent):
         elif message.getMessage() in DTLSServer.msgListFlight4Ack and \
                 message.getMessage() not in self.receivedFlight4Ack:
             self.receivedFlight4Ack[message.getMessage()] = True
-            print ('Handshake Complete') 
-
+            print ('Handshake Complete')
+            print 'Real Handshake Time',self.scheduler.getTime()
+            self.Handshake_Time=self.scheduler.getTime()
         elif message.getMessage() in self.receivedFlight3 or \
                 message.getMessage() in self.receivedFlight4Ack:
             print ("Dropping Message")
@@ -232,12 +233,12 @@ def Handshake(noOfTimes,Handshake_Time_list):
         try:
         
             while not scheduler.empty():
-                print scheduler.run()
+                scheduler.run()
 
         # scheduler.getTime() is handshake duration
 #            print "The Handshake time is -------- ",scheduler.getTime()
             
-            Handshake_Time_list.append(scheduler.getTime())
+            Handshake_Time_list.append(server.Handshake_Time)
         except OverflowError:
             print('Overflow')
             Handshake_Time_list.append('Overflow')
