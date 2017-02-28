@@ -22,7 +22,7 @@ import math
 #		[Flight 4]					        <--- ServerChangeCipherSpec
 #									        <--- ServerFinished
 #
-#       [Flight4 Ack] Flight4Ack      --->
+#                       
 
 
 #
@@ -37,6 +37,7 @@ class DTLSClient(ProtocolAgent):
 
     def __init__(self, name, scheduler, **params):
         ProtocolAgent.__init__(self, name, scheduler, **params)
+        self.HandShakeTime=0
         self.receivedFlight2 = {}
         self.receivedFlight4 = {}
         self.flight1_Retransmission_Count=-1
@@ -46,7 +47,7 @@ class DTLSClient(ProtocolAgent):
         self.transmitFlight1()
         
     def transmitFlight1(self):
-        self.transmit(ProtocolMessage('ClientHello', 87))
+        self.transmit(Message(87, 'ClientHello'))
         self.flight1_Retransmission_Count+=1        
 
 #       Retransmission Timeout (doubles every timeout)
@@ -56,11 +57,11 @@ class DTLSClient(ProtocolAgent):
 
     def transmitFlight3(self):
         
-        self.transmit(ProtocolMessage('ClientCertificate', 834))
-        self.transmit(ProtocolMessage('ClientKeyExchange', 91))
-        self.transmit(ProtocolMessage('CertificateVerify', 97))
-        self.transmit(ProtocolMessage('ChangeCipherSpec', 13))
-        self.transmit(ProtocolMessage('Finished', 37))
+        self.transmit(Message(834, 'ClientCertificate'))
+        self.transmit(Message(91, 'ClientKeyExchange'))
+        self.transmit(Message(97, 'CertificateVerify'))
+        self.transmit(Message(13, 'ChangeCipherSpec'))
+        self.transmit(Message(37, 'Finished'))
 
     
 		
@@ -68,7 +69,7 @@ class DTLSClient(ProtocolAgent):
     	self.scheduler.registerEventRel(Callback(self.checkFlight3),\
                  10.0 * math.pow(2,self.flight3_Retransmission_Count))
 	
-	
+	#Retransmit until atleast 1 msg from Flight 2 is received
     def checkFlight1(self):
         if [self.receivedFlight2.get(msg, False) \
                     for msg in DTLSClient.msgListFlight2].count(True) > 0:
@@ -76,43 +77,44 @@ class DTLSClient(ProtocolAgent):
         else:
             self.transmitFlight1()
 
-
+    #Re-transmit until Flight 4 is completely received
     def checkFlight3(self):
         if [self.receivedFlight4.get(msg, False) \
-                    for msg in DTLSClient.msgListFlight4].count(True) > 0:
+                    for msg in DTLSClient.msgListFlight4].count(False) == 0:
             print('Flight 3 complete')
         else:
             self.transmitFlight3()
-    def checkFlight4Ack(self):
-        self.transmit(Message('Flight4Ack'))
+
+
 
     def receive(self, message, sender):
         ProtocolAgent.receive(self, message, sender)
 
         # client received ServerHello message
     
-        if message.getName() in DTLSClient.msgListFlight2 and \
-                message.getName() not in self.receivedFlight2:
-            self.receivedFlight2[message.getName()] = True            
+        if message.getMessage() in DTLSClient.msgListFlight2 and \
+                message.getMessage() not in self.receivedFlight2:
+            self.receivedFlight2[message.getMessage()] = True            
             if [self.receivedFlight2.get(msg, False) \
                     for msg in DTLSClient.msgListFlight2].count(False) == 0:
                 self.transmitFlight3()
 
-        elif message.getName() in DTLSClient.msgListFlight4 and \
-                message.getName() not in self.receivedFlight4:
-            self.receivedFlight4[message.getName()] = True
+        elif message.getMessage() in DTLSClient.msgListFlight4 and \
+                message.getMessage() not in self.receivedFlight4:
+            self.receivedFlight4[message.getMessage()] = True            
+            if [self.receivedFlight4.get(msg, False) \
+                    for msg in DTLSClient.msgListFlight4].count(False) == 0:
+                print ('Handshake Complete at time: ',self.scheduler.getTime())
+                self.HandShakeTime=self.scheduler.getTime()
+
+
            
  
-        elif message.getName() in self.receivedFlight2 or \
-                message.getName() in self.receivedFlight4:
-            print("Dropping message")
+        elif message.getMessage() in self.receivedFlight2 or \
+                message.getMessage() in self.receivedFlight4:
+            print("Dropping Message")
 
-#   Retransmission for Ack of Flight 4 (Retransmit Ack4 if any duplicate msg of Flight4  
-#   is received, after all of them have been received already )
-        if [self.receivedFlight4.get(msg, False) \
-                for msg in DTLSClient.msgListFlight4].count(False) == 0 and \
-                        message.getName() in DTLSClient.msgListFlight4:
-            self.transmit(Message('Flight4Ack'))
+
                             
 #
 # _____________________________________________________________________________
@@ -120,7 +122,7 @@ class DTLSClient(ProtocolAgent):
 
 class DTLSServer(ProtocolAgent):
     
-    msgListFlight4Ack = ['Flight4Ack']
+
     msgListFlight3 = ['ClientCertificate', 'ClientKeyExchange', 'CertificateVerify', \
             'ChangeCipherSpec', 'Finished']
 
@@ -131,26 +133,26 @@ class DTLSServer(ProtocolAgent):
         self.receivedFlight3 = {}
         self.receivedFlight4Ack ={}
         self.flight2_Retransmission_Count=-1
-        self.flight4_Retransmission_Count=-1
+
 
     def transmitFlight4(self):
 
-        self.transmit(ProtocolMessage('ServerChangeCipherSpec', 13))
-        self.transmit(ProtocolMessage('ServerFinished', 37))
-        self.flight4_Retransmission_Count+=1      
-        self.scheduler.registerEventRel(Callback(self.checkFlight4Ack),\
-                10.0 * math.pow(2,self.flight4_Retransmission_Count) )
-        
+        self.transmit(Message(13, 'ServerChangeCipherSpec'))
+        self.transmit(Message(37, 'ServerFinished'))
+     
+
+
     def transmitFlight2(self):
-        self.transmit(ProtocolMessage('ServerHello', 107))
-        self.transmit(ProtocolMessage('ServerCertificate', 834))
-        self.transmit(ProtocolMessage('ServerKeyExchange', 165))
-        self.transmit(ProtocolMessage('CertificateRequest', 71))
-        self.transmit(ProtocolMessage('ServerHelloDone', 25))
+        self.transmit(Message(107, 'ServerHello'))
+        self.transmit(Message(834, 'ServerCertificate'))
+        self.transmit(Message(165, 'ServerKeyExchange'))
+        self.transmit(Message(71, 'CertificateRequest'))
+        self.transmit(Message(25, 'ServerHelloDone'))
         self.flight2_Retransmission_Count+=1        
         self.scheduler.registerEventRel(Callback(self.checkFlight2),\
                 10.0 * math.pow(2,self.flight2_Retransmission_Count)) 
 
+    #Retransmit until atleast 1 msg from Flight 3 is received
     def checkFlight2(self):
         if [self.receivedFlight3.get(msg, False) \
                     for msg in DTLSServer.msgListFlight3].count(True) > 0:
@@ -158,14 +160,7 @@ class DTLSServer(ProtocolAgent):
         else:
             
             self.transmitFlight2()
-        
-    def checkFlight4Ack(self):
-        if len(self.receivedFlight4Ack) > 0:
-            print('Flight 4 complete')
-        else:
-            
-              
-            self.transmitFlight4()
+
     
 
         
@@ -173,27 +168,25 @@ class DTLSServer(ProtocolAgent):
         ProtocolAgent.receive(self, message, sender)
 
         # server received ClientHello message
-        if message.getName() == 'ClientHello':
+        if message.getMessage() == 'ClientHello':
             self.transmitFlight2()
             
             
-        elif message.getName() in DTLSServer.msgListFlight3 and \
-                message.getName() not in self.receivedFlight3:
-            self.receivedFlight3[message.getName()] = True            
-            if [self.receivedFlight3.get(msg, False) \
-                    for msg in DTLSServer.msgListFlight3].count(False) == 0:
-                self.transmitFlight4()                
-        
-        elif message.getName() in DTLSServer.msgListFlight4Ack and \
-                message.getName() not in self.receivedFlight4Ack:
-            self.receivedFlight4Ack[message.getName()] = True 
-            print ('Handshake Completed')
-            self.Handshake_Time=self.scheduler.getTime()
+        elif message.getMessage() in DTLSServer.msgListFlight3 and \
+                message.getMessage() not in self.receivedFlight3:
+            self.receivedFlight3[message.getMessage()] = True            
+
             
 
-        elif message.getName() in self.receivedFlight3 or \
-                message.getName() in self.receivedFlight4Ack:
-            print ("Dropping message")
+        elif message.getMessage() in self.receivedFlight3:
+            print ("Dropping Message")
+
+#Retransmit Flight 4 on receiving any duplicate msg
+# of Flight 3(Once flight 3 has already been received fully)
+        if message.getMessage() in DTLSServer.msgListFlight3 and \
+                [self.receivedFlight3.get(msg, False) \
+                        for msg in DTLSServer.msgListFlight3].count(False) == 0:
+            self.transmitFlight4()
 
 #
 # _____________________________________________________________________________
@@ -224,7 +217,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
         server = DTLSServer('server1', scheduler, logger=logger)
         client = DTLSClient('client', scheduler, logger=logger)
 
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, inter_msg_time = 0.001, logger=logger)
+        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
 
@@ -232,9 +225,11 @@ def Handshake_HS1(noOfTimes,listOfTimes):
     
         while not scheduler.empty():
             scheduler.run()
+            
+        listOfTimes.append(client.HandShakeTime)
+        
 
-        print server.Handshake_Time,' is handshake duration'
-        listOfTimes.append(server.Handshake_Time)
+
 #
 #______________________________________________________________________________
 #
@@ -244,7 +239,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(10,HandshakeList)
+    Handshake_HS1(20,HandshakeList)
 
     print HandshakeList
 
