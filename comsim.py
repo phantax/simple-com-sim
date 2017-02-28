@@ -74,18 +74,24 @@ class Scheduler(object):
 
 class Message(object):
 
-    def __init__(self, length, message=None):
-        self.length = length
-        self.message = message
+    def __init__(self, name):
+        self.name = name
 
     def __str__(self):
-        if self.message:
-            return '{0}(L={1})'.format(self.message, self.length)
-        else:
-            return 'GenericMessage(L={0})'.format(self.length)
+        return '[{0}]'.format(self.name)
 
-    def getMessage(self):
-        return self.message
+    def getName(self):
+        return self.name
+
+
+class ProtocolMessage(Message):
+
+    def __init__(self, message, length):
+        Message.__init__(self, message)
+        self.length = length
+
+    def __str__(self):
+        return '<{0}>(L={1})'.format(self.getName(), self.length)
 
     def getLength(self):
         return self.length
@@ -121,7 +127,7 @@ class ProtocolAgent(object):
     def receive(self, message, sender):
         # sender is agent object instance
         if self.logger:        
-            header = '[{0:>.3f}]'.format(self.scheduler.getTime())
+            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
             text = '--> {0} received message {1} from {2}'.format(
                     self.name, str(message), sender.getName())
             self.logger.log(header, text)
@@ -144,6 +150,7 @@ class Medium(object):
         self.data_rate = params.get('data_rate', None)    # None means 'unlimited'
         self.msg_loss_rate = params.get('msg_loss_rate', 0.)
         self.bit_loss_rate = params.get('bit_loss_rate', 0.)
+        self.inter_msg_time = params.get('inter_msg_time', 0.)
         self.logger = params.get('logger', None)
 
     def registerAgent(self, agent):
@@ -175,8 +182,8 @@ class Medium(object):
             medium.busy = False
             medium.checkTxQueues()
 
-        self.scheduler.registerEventRel(\
-                Callback(transmissionDone, medium=self), duration)
+        self.scheduler.registerEventRel(Callback( \
+                transmissionDone, medium=self), duration + self.inter_msg_time)
 
     def isBusy(self):
         return self.busy
@@ -188,8 +195,13 @@ class Medium(object):
         bit_loss_rate and the message's length) or if the whole message is lost
         (probability affected by msg_loss_rate).
         """
-        bit_corrupt_prop = 1. - (1. - self.bit_loss_rate)**(message.getLength() * 8)
-        return bit_corrupt_prop + self.msg_loss_rate - (bit_corrupt_prop * self.msg_loss_rate)
+        if isinstance(message, ProtocolMessage):
+            bit_corrupt_prop = \
+                    1. - (1. - self.bit_loss_rate)**(message.getLength() * 8)
+            return bit_corrupt_prop + self.msg_loss_rate \
+                    - (bit_corrupt_prop * self.msg_loss_rate)
+        else:
+            return 0.
 
     # called by ProtocolAgent class
     def send(self, message, sender, receiver=None):
@@ -202,19 +214,24 @@ class Medium(object):
             # medium is free --> transmit message
 
             # duration of the transmission given by data_rate
-            duration = 0. if self.data_rate is None \
-                    else message.getLength() / self.data_rate
+            if self.data_rate is None or not isinstance(message, ProtocolMessage):
+                duration = 0.
+            else:
+                duration = message.getLength() / self.data_rate
+                self.setBusy(duration)
 
             # message loss probability
-            loss_prop = self.getMsgLossProp(message)
+            if isinstance(message, ProtocolMessage):
+                loss_prop = self.getMsgLossProp(message)
+            else:
+                loss_prop = 0.
 
             if self.logger:        
-                header = '[{0:>.3f}]'.format(self.scheduler.getTime())
-                text = '<-- {0} sending message {1} (loss prop. = {2})'.format(
+                header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
+                text = '<-- {0} sending message {1} (p_loss = {2})'.format(
                         sender.getName(), str(message), loss_prop)
                 self.logger.log(header, text)
 
-            self.setBusy(duration)
 
             if not receiver:
                 # this is a boradcast
@@ -226,7 +243,7 @@ class Medium(object):
                                     message=message, sender=sender), duration)
                         else:
                             if self.logger:        
-                                header = '[{0:>.3f}]'.format(self.scheduler.getTime())
+                                header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
                                 text = '<-- Lost message {1} sent by {0}'.format(
                                         sender.getName(), str(message))
                                 self.logger.log(header, text)
@@ -240,7 +257,7 @@ class Medium(object):
                             message=message, sender=sender), duration)
                 else:
                     if self.logger:        
-                        header = '[{0:>.3f}]'.format(self.scheduler.getTime())
+                        header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
                         text = '<-- Lost message {1} sent by {0}'.format(
                                 sender.getName(), str(message))
                         self.logger.log(header, text)
