@@ -3,6 +3,8 @@
 import sys
 from comsim import *
 import math
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 #   	[Flight 1]	ClientHello     ---> 
@@ -204,7 +206,70 @@ class Logger(object):
 # _____________________________________________________________________________
 #
 
+def plotHandshakes(noOfHandshakes,Hanshakelist_tuple):
+    TotalHandshakes = noOfHandshakes
 
+    handshakelist = Hanshakelist_tuple
+
+
+
+    fig, ax = plt.subplots()
+
+    index = np.arange(TotalHandshakes)
+    bar_width = 0.35
+
+    opacity = 0.4
+    error_config = {'ecolor': '0.3'}
+
+    rects1 = plt.bar(index, handshakelist, bar_width,
+                     alpha=opacity,
+                     color='b',
+                     error_kw=error_config,
+                     label='Handshake Time')
+
+
+
+    plt.xlabel('Handshake number')
+    plt.ylabel('Time taken')
+    plt.title('Handshake Times')
+
+    labelCounter=1
+    xLabels=()
+    while(labelCounter!=TotalHandshakes+1):
+
+	    xLabels=xLabels+(str(labelCounter),)
+	    labelCounter+=1
+
+
+
+    plt.xticks(index + bar_width / 2, xLabels)
+    plt.legend()
+
+
+    for rect in rects1:
+        height = rect.get_height()
+        ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+                '%d' % int(height),
+                ha='center', va='bottom')
+
+
+
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+
+
+
+
+
+#
+#____________________________________________________________________________________
+#
 def Handshake_HS1(noOfTimes,listOfTimes):
     
     while(noOfTimes):
@@ -217,7 +282,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
         server = DTLSServer('server1', scheduler, logger=logger)
         client = DTLSClient('client', scheduler, logger=logger)
 
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, logger=logger)
+        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.2, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
 
@@ -242,6 +307,8 @@ def main(argv):
     Handshake_HS1(20,HandshakeList)
 
     print HandshakeList
+    plotHandshakes(len(HandshakeList),tuple(HandshakeList))
+
 
     pass
 
