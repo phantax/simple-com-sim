@@ -206,7 +206,7 @@ class Logger(object):
 # _____________________________________________________________________________
 #
 
-def plotHandshakes(noOfHandshakes,Hanshakelist_tuple):
+def plotBarGraph(noOfHandshakes,Hanshakelist_tuple):
     TotalHandshakes = noOfHandshakes
 
     handshakelist = Hanshakelist_tuple
@@ -270,6 +270,25 @@ def plotHandshakes(noOfHandshakes,Hanshakelist_tuple):
 #
 #____________________________________________________________________________________
 #
+
+
+
+def plotHistogram(HandshakeTimesList):
+    
+    plt.hist(HandshakeTimesList,bins='auto')
+    plt.title("Histogram")
+    plt.xlabel("Handshaketime")
+    plt.ylabel("Frequency")
+
+    plt.show()
+
+
+
+#
+#____________________________________________________________________________________
+#
+
+
 def Handshake_HS1(noOfTimes,listOfTimes):
     
     while(noOfTimes):
@@ -282,7 +301,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
         server = DTLSServer('server1', scheduler, logger=logger)
         client = DTLSClient('client', scheduler, logger=logger)
 
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.2, logger=logger)
+        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
 
@@ -304,10 +323,10 @@ def Handshake_HS1(noOfTimes,listOfTimes):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(20,HandshakeList)
+    Handshake_HS1(100,HandshakeList)
 
     print HandshakeList
-    plotHandshakes(len(HandshakeList),tuple(HandshakeList))
+    plotHistogram(HandshakeList)
 
 
     pass
