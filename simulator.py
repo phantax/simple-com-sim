@@ -303,7 +303,41 @@ def plotHistogram(HandshakeTimesList):
 #
 
 
-def Handshake_HS1(noOfTimes,listOfTimes):
+
+
+def plot_Mean_Variance_Media_Against_LossRate():
+    Loss_Rate=0
+    mean_list=[]    
+    var_list=[]
+    std_list=[]
+    median_list=[]
+    
+    while Loss_Rate<0.9:
+        Loss_Rate+=0.1
+        
+        tmp_list=[]
+        Handshake_HS1(10,tmp_list,LossRate=Loss_Rate)
+
+        if len(tmp_list)>0:
+            mean_list.append(np.mean(tmp_list))
+            var_list.append(np.var(tmp_list))
+            std_list.append(np.std(tmp_list))
+            median_list.append(np.median(tmp_list))
+
+    
+    print mean_list
+
+
+#
+#_________________________________________________________________________________________
+#
+
+
+
+
+
+
+def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
     
     while(noOfTimes):
         noOfTimes-=1
@@ -315,7 +349,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
         server = DTLSServer('server1', scheduler, logger=logger)
         client = DTLSClient('client', scheduler, logger=logger)
 
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.2, inter_msg_time=0.001, logger=logger)
+        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, inter_msg_time=0.001, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
 
@@ -324,7 +358,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
         while not scheduler.empty():
             scheduler.run()
             if client.RetransmissionFlag | server.RetransmissionFlag :
-                print('Aborting Handshahake: Retransmission reached max limit (10)')
+                print('Stopping Retransmission: Retransmission reached max limit (10)')
                 break
 
 
@@ -345,11 +379,11 @@ def Handshake_HS1(noOfTimes,listOfTimes):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(5,HandshakeList)
+    Handshake_HS1(10,HandshakeList)
 
     print HandshakeList
-#    plotHistogram(HandshakeList)
-
+    plotHistogram(HandshakeList)
+#    plot_Mean_Variance_Media_Against_LossRate()
 
     pass
 
