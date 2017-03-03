@@ -1,6 +1,7 @@
 import sys
 import random
 import Queue
+import collections
 import math
 
 
@@ -105,7 +106,7 @@ class ProtocolAgent(object):
         self.scheduler = scheduler
         self.medium = None
         self.logger = params.get('logger', None)
-        self.txQueue = Queue.Queue()
+        self.txQueue = collections.deque()
 
     def getName(self):
         return self.name
@@ -120,26 +121,39 @@ class ProtocolAgent(object):
         # receiver might be agent name or agent object instance
         if not self.medium:
             raise Exception('Agent "{0}" not registered with any medium'.format(self.name))
+
+        self.log('{0} scheduling message {1}'.format(self.name, str(message)))
+
         # add message to transmission queue
-        self.txQueue.put((message, receiver))
+        self.txQueue.append((message, receiver, self.scheduler.getTime()))
+
+        # detect message jam
+        if len(self.txQueue):
+            times = [m[2] for m in self.txQueue]
+            if (max(times) - min(times)) > 0.:
+                self.log('Potential message jam for {0} (d = {1:>.3f}s)' \
+                        .format(self.name, max(times) - min(times)))
+
         self.medium.checkTxQueues()
 
     # called by Medium class
     def receive(self, message, sender):
         # sender is agent object instance
-        if self.logger:        
-            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-            text = '--> {0} received message {1} from {2}'.format(
-                    self.name, str(message), sender.getName())
-            self.logger.log(header, text)
+        self.log('--> {0} received message {1} from {2}'.format(
+                    self.name, str(message), sender.getName()))
 
     # called by Medium class
     def retrieveMessage(self):
-        if self.txQueue.empty():
+        if not len(self.txQueue):
             # no message in the transmission queue
             return None, None
         else:
-            return self.txQueue.get()
+            return self.txQueue.popleft()[:2]
+
+    def log(self, text):
+        if self.logger:        
+            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
+            self.logger.log(header, text)
 
 
 class Medium(object):
@@ -173,16 +187,7 @@ class Medium(object):
                 if message is not None:
                     break
             if message is not None:                
-                if self.msg_slot_distance is not None:
-                    # determine next message slot ...
-                    nextSlot = self.msg_slot_distance * \
-                            math.ceil(self.scheduler.getTime() / self.msg_slot_distance)
-                    # ... and register a callback to send message at the next slot
-                    self.scheduler.registerEventRel(Callback( \
-                            self.send, message=message, sender=agent, receiver=receiver), nextSlot)
-                else:
-                    # no message slotting: just send the message
-                    self.send(message, agent, receiver)
+                self.prepare(message, agent, receiver)
 
     def setBusy(self, duration):
         if self.busy:
@@ -219,19 +224,34 @@ class Medium(object):
             header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
             self.logger.log(header, text)
 
-    def send(self, message, sender, receiver=None):
+    def prepare(self, message, sender, receiver=None):
 
-        # make sender an agent object instance
-        if isinstance(sender, str):
-            sender = self.agents[sender]
+        if self.msg_slot_distance is not None:
+            # determine time to next message slot
+            frac, whole = math.modf(self.scheduler.getTime() / self.msg_slot_distance)
+            timeToNextSlot = self.msg_slot_distance * (1. - frac)                    
+        else:
+            timeToNextSlot = 0.
 
         # There is a finite message data rate only for ProtocolMessages
         if self.data_rate is None or not isinstance(message, ProtocolMessage):
             duration = 0.
+            timeToNextSlot = 0.
         else:
             # duration of the transmission given by data_rate
             duration = message.getLength() / self.data_rate
-            self.setBusy(duration)
+            self.setBusy(timeToNextSlot + duration)
+
+        # ... and register a callback to send message at the next slot
+        self.scheduler.registerEventRel(Callback(self.send,
+                message=message, sender=sender, receiver=receiver, \
+                duration=duration), timeToNextSlot)
+
+    def send(self, message, sender, receiver, duration):
+
+        # make sender an agent object instance
+        if isinstance(sender, str):
+            sender = self.agents[sender]
 
         # There is a message loss probability different
         # from zero only for ProtocolMessages
