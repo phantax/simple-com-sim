@@ -1,6 +1,7 @@
 import sys
 import random
 import Queue
+import math
 
 
 class Event(object):
@@ -148,6 +149,7 @@ class Medium(object):
         self.agents = {}
         self.busy = False
         self.data_rate = params.get('data_rate', None)    # None means 'unlimited'
+        self.msg_slot_distance = params.get('msg_slot_distance', None)      # None means 'no slotting'
         self.msg_loss_rate = params.get('msg_loss_rate', 0.)
         self.bit_loss_rate = params.get('bit_loss_rate', 0.)
         self.inter_msg_time = params.get('inter_msg_time', 0.)
@@ -170,8 +172,17 @@ class Medium(object):
                 message, receiver = agent.retrieveMessage()
                 if message is not None:
                     break
-            if message is not None:
-                self.send(message, agent, receiver)
+            if message is not None:                
+                if self.msg_slot_distance is not None:
+                    # determine next message slot ...
+                    nextSlot = self.msg_slot_distance * \
+                            math.ceil(self.scheduler.getTime() / self.msg_slot_distance)
+                    # ... and register a callback to send message at the next slot
+                    self.scheduler.registerEventRel(Callback( \
+                            self.send, message=message, sender=agent, receiver=receiver), nextSlot)
+                else:
+                    # no message slotting: just send the message
+                    self.send(message, agent, receiver)
 
     def setBusy(self, duration):
         if self.busy:
@@ -203,65 +214,53 @@ class Medium(object):
         else:
             return 0.
 
-    # called by ProtocolAgent class
+    def log(self, text):
+        if self.logger:        
+            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
+            self.logger.log(header, text)
+
     def send(self, message, sender, receiver=None):
+
         # make sender an agent object instance
         if isinstance(sender, str):
             sender = self.agents[sender]
 
-        if not self.isBusy():
-
-            # medium is free --> transmit message
-
+        # There is a finite message data rate only for ProtocolMessages
+        if self.data_rate is None or not isinstance(message, ProtocolMessage):
+            duration = 0.
+        else:
             # duration of the transmission given by data_rate
-            if self.data_rate is None or not isinstance(message, ProtocolMessage):
-                duration = 0.
-            else:
-                duration = message.getLength() / self.data_rate
-                self.setBusy(duration)
+            duration = message.getLength() / self.data_rate
+            self.setBusy(duration)
 
-            # message loss probability
-            if isinstance(message, ProtocolMessage):
-                loss_prop = self.getMsgLossProp(message)
-            else:
-                loss_prop = 0.
+        # There is a message loss probability different
+        # from zero only for ProtocolMessages
+        if isinstance(message, ProtocolMessage):
+            loss_prop = self.getMsgLossProp(message)
+        else:
+            loss_prop = 0.
 
-            if self.logger:        
-                header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-                text = '<-- {0} sending message {1} (p_loss = {2})'.format(
-                        sender.getName(), str(message), loss_prop)
-                self.logger.log(header, text)
+        self.log('<-- {0} sending message {1} (p_loss = {2})'.format(
+                sender.getName(), str(message), loss_prop))
 
+        if not receiver:
+            # this is a broadcast (let sender not receive its own message)
+            for agent in filter(lambda a: a != sender, self.agents.values()):
+                self.dispatch(message, sender, agent, loss_prop, duration)
+        else:
+            # make receiver an object instance
+            if isinstance(receiver, str):
+                receiver = self.agents[receiver]
+            self.dispatch(message, sender, receiver, loss_prop, duration)
 
-            if not receiver:
-                # this is a boradcast
-                for agent in self.agents.values():     
-                    # let sender not receive its own message
-                    if agent != sender:
-                        if random.random() >= loss_prop:
-                            self.scheduler.registerEventRel(Callback(agent.receive, \
-                                    message=message, sender=sender), duration)
-                        else:
-                            if self.logger:        
-                                header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-                                text = '<-- Lost message {1} sent by {0}'.format(
-                                        sender.getName(), str(message))
-                                self.logger.log(header, text)
-            else:
-                # make receiver agent name
-                if isinstance(receiver, ProtocolAgent):
-                    receiver = receiver.getName()
-                if random.random() >= loss_prop:
-                    self.scheduler.registerEventRel(Callback( \
-                            self.agents[receiver].receive, \
-                            message=message, sender=sender), duration)
-                else:
-                    if self.logger:        
-                        header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-                        text = '<-- Lost message {1} sent by {0}'.format(
-                                sender.getName(), str(message))
-                        self.logger.log(header, text)
-
-
+    def dispatch(self, message, sender, receiver, loss_prop, duration):
+        if random.random() >= loss_prop:
+            # message did not get lost => register a callback for reception
+            self.scheduler.registerEventRel(Callback(receiver.receive, \
+                    message=message, sender=sender), duration)
+        else:
+            # message got lost => log it
+            self.log('<-- Lost message {1} sent by {0}'.format(
+                    sender.getName(), str(message)))
 
 
