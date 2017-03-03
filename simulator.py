@@ -44,13 +44,19 @@ class DTLSClient(ProtocolAgent):
         self.receivedFlight4 = {}
         self.flight1_Retransmission_Count=-1
         self.flight3_Retransmission_Count=-1
+        self.ClientDataCounter=0
+        self.RetransmissionFlag=False        
 
     def trigger(self):
         self.transmitFlight1()
         
     def transmitFlight1(self):
         self.transmit(ProtocolMessage('ClientHello',87 ))
-        self.flight1_Retransmission_Count+=1        
+        self.ClientDataCounter+=87
+        self.flight1_Retransmission_Count+=1
+
+        if self.flight1_Retransmission_Count>10:
+            self.RetransmissionFlag=True                
 
 #       Retransmission Timeout (doubles every timeout)
         self.scheduler.registerEventRel(Callback(self.checkFlight1), \
@@ -64,10 +70,14 @@ class DTLSClient(ProtocolAgent):
         self.transmit(ProtocolMessage('CertificateVerify',97))
         self.transmit(ProtocolMessage('ChangeCipherSpec',13))
         self.transmit(ProtocolMessage('Finished',37))
+        self.ClientDataCounter+=1072
 
     
 		
         self.flight3_Retransmission_Count+=1
+
+        if self.flight3_Retransmission_Count>10:
+            self.RetransmissionFlag=True
     	self.scheduler.registerEventRel(Callback(self.checkFlight3),\
                  10.0 * math.pow(2,self.flight3_Retransmission_Count))
 	
@@ -135,13 +145,16 @@ class DTLSServer(ProtocolAgent):
         self.receivedFlight3 = {}
         self.receivedFlight4Ack ={}
         self.flight2_Retransmission_Count=-1
+        self.flight4_Retransmission_Count=-1
+        self.ServerDataCounter=0
+        self.RetransmissionFlag=False        
 
 
     def transmitFlight4(self):
 
         self.transmit(ProtocolMessage('ServerChangeCipherSpec',13))
         self.transmit(ProtocolMessage('ServerFinished',37))
-     
+        self.ServerDataCounter+=50
 
 
     def transmitFlight2(self):
@@ -150,7 +163,11 @@ class DTLSServer(ProtocolAgent):
         self.transmit(ProtocolMessage('ServerKeyExchange',165))
         self.transmit(ProtocolMessage('CertificateRequest',71))
         self.transmit(ProtocolMessage('ServerHelloDone',25))
-        self.flight2_Retransmission_Count+=1        
+        self.flight2_Retransmission_Count+=1
+        self.ServerDataCounter+=   1202
+
+        if self.flight2_Retransmission_Count>10:
+            self.RetransmissionFlag=True     
         self.scheduler.registerEventRel(Callback(self.checkFlight2),\
                 10.0 * math.pow(2,self.flight2_Retransmission_Count)) 
 
@@ -189,6 +206,9 @@ class DTLSServer(ProtocolAgent):
                 [self.receivedFlight3.get(msg, False) \
                         for msg in DTLSServer.msgListFlight3].count(False) == 0:
             self.transmitFlight4()
+            self.flight4_Retransmission_Count+=1
+            if self.flight4_Retransmission_Count>10:
+                self.RetransmissionFlag=True
 
 #
 # _____________________________________________________________________________
@@ -261,12 +281,6 @@ def plotBarGraph(noOfHandshakes,Hanshakelist_tuple):
 
 
 
-
-
-
-
-
-
 #
 #____________________________________________________________________________________
 #
@@ -301,7 +315,7 @@ def Handshake_HS1(noOfTimes,listOfTimes):
         server = DTLSServer('server1', scheduler, logger=logger)
         client = DTLSClient('client', scheduler, logger=logger)
 
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, logger=logger)
+        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.2, inter_msg_time=0.001, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
 
@@ -309,9 +323,17 @@ def Handshake_HS1(noOfTimes,listOfTimes):
     
         while not scheduler.empty():
             scheduler.run()
-            
-        listOfTimes.append(client.HandShakeTime)
+            if client.RetransmissionFlag | server.RetransmissionFlag :
+                print('Aborting Handshahake: Retransmission reached max limit (10)')
+                break
+
+
+
+
+        if client.HandShakeTime!=0:   #if hanshake was incomplete, don't append 0 in the list        
+            listOfTimes.append(client.HandShakeTime)
         
+        print 'Total amount of data exchanged : ',client.ClientDataCounter+server.ServerDataCounter
 
 
 #
@@ -323,10 +345,10 @@ def Handshake_HS1(noOfTimes,listOfTimes):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(100,HandshakeList)
+    Handshake_HS1(5,HandshakeList)
 
     print HandshakeList
-    plotHistogram(HandshakeList)
+#    plotHistogram(HandshakeList)
 
 
     pass
