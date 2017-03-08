@@ -143,7 +143,7 @@ class DTLSServer(ProtocolAgent):
         
         ProtocolAgent.__init__(self, name, scheduler, **params)
         self.receivedFlight3 = {}
-        self.receivedFlight4Ack ={}
+        self.flight3Duplicate = {}
         self.flight2_Retransmission_Count=-1
         self.flight4_Retransmission_Count=-1
         self.ServerDataCounter=0
@@ -154,6 +154,11 @@ class DTLSServer(ProtocolAgent):
 
         self.transmit(ProtocolMessage('ServerChangeCipherSpec',13))
         self.transmit(ProtocolMessage('ServerFinished',37))
+        self.flight4_Retransmission_Count+=1
+
+        if self.flight2_Retransmission_Count>10:
+            self.RetransmissionFlag=True
+
         self.ServerDataCounter+=50
 
 
@@ -184,6 +189,8 @@ class DTLSServer(ProtocolAgent):
 
         
     def receive(self, message, sender):
+
+
         ProtocolAgent.receive(self, message, sender)
 
         # server received ClientHello message
@@ -193,22 +200,33 @@ class DTLSServer(ProtocolAgent):
             
         elif message.getName() in DTLSServer.msgListFlight3 and \
                 message.getName() not in self.receivedFlight3:
-            self.receivedFlight3[message.getName()] = True            
-
+            self.receivedFlight3[message.getName()] = True
+            if [self.receivedFlight3.get(msg, False) \
+                    for msg in DTLSServer.msgListFlight3].count(False) == 0:            
+                self.transmitFlight4()                
+        
             
 
-        elif message.getName() in self.receivedFlight3:
+
+#Retransmit Flight 4 as soon as receiving flight 3 duplicate(all 5 messages)
+        
+        elif message.getName() in DTLSServer.msgListFlight3 and \
+                message.getName() in self.receivedFlight3 and \
+                        message.getName() not in self.flight3Duplicate and \
+                                [self.receivedFlight3.get(msg, False) \
+                                        for msg in DTLSServer.msgListFlight3].count(False) == 0:
+            self.flight3Duplicate[message.getName()]=True
+            if [self.flight3Duplicate.get(msg, False) \
+                    for msg in DTLSServer.msgListFlight3].count(False) == 0:
+                self.transmitFlight4()
+                self.flight3Duplicate={}
+
+
+        elif message.getName() in self.receivedFlight3 and message.getName() in self.flight3Duplicate:
             print ("Dropping Message")
 
-#Retransmit Flight 4 on receiving any duplicate msg
-# of Flight 3(Once flight 3 has already been received fully)
-        if message.getName() in DTLSServer.msgListFlight3 and \
-                [self.receivedFlight3.get(msg, False) \
-                        for msg in DTLSServer.msgListFlight3].count(False) == 0:
-            self.transmitFlight4()
-            self.flight4_Retransmission_Count+=1
-            if self.flight4_Retransmission_Count>10:
-                self.RetransmissionFlag=True
+
+
 
 #
 # _____________________________________________________________________________
@@ -305,14 +323,14 @@ def plotHistogram(HandshakeTimesList):
 
 
 
-def plot_Mean_Variance_Media_Against_LossRate():
+def plot_Mean_Variance_Median_Against_LossRate():
     Loss_Rate=0
     mean_list=[]    
     var_list=[]
     std_list=[]
     median_list=[]
     
-    while Loss_Rate<0.9:
+    while Loss_Rate<0.5:
         Loss_Rate+=0.1
         
         tmp_list=[]
@@ -379,11 +397,11 @@ def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(10,HandshakeList)
+    Handshake_HS1(10,HandshakeList,LossRate=0.2)
 
     print HandshakeList
-    plotHistogram(HandshakeList)
-#    plot_Mean_Variance_Media_Against_LossRate()
+#    plotHistogram(HandshakeList)
+#    plot_Mean_Variance_Median_Against_LossRate()
 
     pass
 
