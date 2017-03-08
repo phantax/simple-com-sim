@@ -5,6 +5,78 @@ import collections
 import math
 
 
+class TextFormatter(object):
+
+    useColor = True
+
+    strColorEnd = '\033[0m'
+
+    @staticmethod
+    def makeBoldWhite(s):
+        if TextFormatter.useColor:
+            return '\033[1m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBoldRed(s):
+        if TextFormatter.useColor:
+            return '\033[1;31m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBoldGreen(s):
+        if TextFormatter.useColor:
+            return '\033[1;32m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBoldYellow(s):
+        if TextFormatter.useColor:
+            return '\033[1;33m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBoldBlue(s):
+        if TextFormatter.useColor:
+            return '\033[1;34m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBoldPurple(s):
+        if TextFormatter.useColor:
+            return '\033[1;35m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBoldCyan(s):
+        if TextFormatter.useColor:
+            return '\033[1;36m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeGreen(s):
+        if TextFormatter.useColor:
+            return '\033[32m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeRed(s):
+        if TextFormatter.useColor:
+            return '\033[31m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def makeBlue(s):
+        if TextFormatter.useColor:
+            return '\033[34m' + s + TextFormatter.strColorEnd
+        return s
+
+    @staticmethod
+    def indent(str, level=1):
+        lines = [' '*(4 if s else 0)*level + s for s in str.split('\n')]
+        return '\n'.join(lines)
+
+
 class Event(object):
     """
     This is the base class for scheduler events
@@ -122,7 +194,8 @@ class ProtocolAgent(object):
         if not self.medium:
             raise Exception('Agent "{0}" not registered with any medium'.format(self.name))
 
-        self.log('{0} scheduling message {1}'.format(self.name, str(message)))
+        self.log('Info: {0} scheduling message {1}' \
+                .format(self.name, str(message)))
 
         # add message to transmission queue
         self.txQueue.append((message, receiver, self.scheduler.getTime()))
@@ -131,16 +204,19 @@ class ProtocolAgent(object):
         if len(self.txQueue):
             times = [m[2] for m in self.txQueue]
             if (max(times) - min(times)) > 0.:
-                self.log('Potential message jam for {0} (d = {1:>.3f}s)' \
-                        .format(self.name, max(times) - min(times)))
+                self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
+                        ' message jam for {0} (N = {1}, d = {2:>.3f}s)' \
+                                .format(self.name, len(self.txQueue), \
+                                        max(times) - min(times))))
 
         self.medium.checkTxQueues()
 
     # called by Medium class
     def receive(self, message, sender):
         # sender is agent object instance
-        self.log('--> {0} received message {1} from {2}'.format(
-                    self.name, str(message), sender.getName()))
+        self.log(TextFormatter.makeBoldGreen(
+                '--> {0} received message {1} from {2}'.format(
+                        self.name, str(message), sender.getName())))
 
     # called by Medium class
     def retrieveMessage(self):
@@ -198,7 +274,7 @@ class Medium(object):
             medium.busy = False
             medium.checkTxQueues()
 
-        self.scheduler.registerEventRel(Callback( \
+        self.scheduler.registerEventRel(Callback(
                 transmissionDone, medium=self), duration + self.inter_msg_time)
 
     def isBusy(self):
@@ -260,8 +336,9 @@ class Medium(object):
         else:
             loss_prop = 0.
 
-        self.log('<-- {0} sending message {1} (p_loss = {2})'.format(
-                sender.getName(), str(message), loss_prop))
+        self.log(TextFormatter.makeBoldBlue(\
+                '<-- {0} sending message {1} (p_loss = {2})'.format(
+                        sender.getName(), str(message), loss_prop)))
 
         if not receiver:
             # this is a broadcast (let sender not receive its own message)
@@ -280,7 +357,7 @@ class Medium(object):
                     message=message, sender=sender), duration)
         else:
             # message got lost => log it
-            self.log('<-- Lost message {1} sent by {0}'.format(
-                    sender.getName(), str(message)))
+            self.log(TextFormatter.makeBoldRed(('Info: Lost message {1} sent' + \
+                    ' by {0}').format(sender.getName(), str(message))))
 
 
