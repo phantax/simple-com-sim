@@ -307,7 +307,9 @@ def plotBarGraph(noOfHandshakes,Hanshakelist_tuple):
 
 def plotHistogram(HandshakeTimesList):
     
-    plt.hist(HandshakeTimesList,bins='auto')
+
+    bins = np.linspace(8,1000,10)
+    plt.hist(HandshakeTimesList,bins,alpha=0.5,label='1')
     plt.title("Histogram")
     plt.xlabel("Handshaketime")
     plt.ylabel("Frequency")
@@ -323,18 +325,20 @@ def plotHistogram(HandshakeTimesList):
 
 
 
-def plot_Mean_Variance_Median_Against_LossRate():
+def plot_Mean_Variance_Median_Std_Against_LossRate():
     Loss_Rate=0
     mean_list=[]    
     var_list=[]
     std_list=[]
     median_list=[]
     
-    while Loss_Rate<0.5:
-        Loss_Rate+=0.1
-        
+    Loss_Rate_list=[]
+
+    while Loss_Rate<0.7:
+        Loss_Rate+=0.05
+        Loss_Rate_list.append(Loss_Rate)
         tmp_list=[]
-        Handshake_HS1(10,tmp_list,LossRate=Loss_Rate)
+        Handshake_HS1(100,tmp_list,LossRate=Loss_Rate)
 
         if len(tmp_list)>0:
             mean_list.append(np.mean(tmp_list))
@@ -343,7 +347,41 @@ def plot_Mean_Variance_Median_Against_LossRate():
             median_list.append(np.median(tmp_list))
 
     
-    print mean_list
+#    print 'mean: ',mean_list
+#    print 'var:  ',var_list
+#    print 'std:  ',std_list
+#    print 'med:  ',median_list
+
+    plt.figure(1)
+    plt.xlabel('Loss Rate')
+    plt.ylabel('Mean')
+    plt.title('Loss Rate v/s Mean Handshake Time')
+    plt.plot(Loss_Rate_list,mean_list)
+
+
+    plt.figure(2)
+    plt.xlabel('Loss Rate')
+    plt.ylabel('Variance')
+    plt.title('Loss Rate v/s Variance of Handshake Time')
+    plt.plot(Loss_Rate_list,var_list)
+
+
+    plt.figure(3)
+    plt.xlabel('Loss Rate')
+    plt.ylabel('Std')
+    plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
+    plt.plot(Loss_Rate_list,std_list)
+
+
+    plt.figure(4)
+    plt.xlabel('Loss Rate')
+    plt.ylabel('Median')
+    plt.title('Loss Rate v/s Median of Handshake Time')
+    plt.plot(Loss_Rate_list,median_list)
+
+
+    plt.show()
+
 
 
 #
@@ -397,11 +435,11 @@ def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(10,HandshakeList,LossRate=0.2)
+    Handshake_HS1(1000,HandshakeList,LossRate=0.2)
 
-    print HandshakeList
-#    plotHistogram(HandshakeList)
-#    plot_Mean_Variance_Median_Against_LossRate()
+#    print HandshakeList
+    plotHistogram(HandshakeList)
+#    plot_Mean_Variance_Median_Std_Against_LossRate()
 
     pass
 
