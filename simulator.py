@@ -26,6 +26,35 @@ import matplotlib.pyplot as plt
 #
 #                       
 
+# [ <Flight1>, <Flight2>, <Flight3>, ... ]
+
+# Flight1: client-initiated 
+# Flight2: server-initiated 
+# Flight3: client-initiated 
+# Flight4: server-initiated 
+# ...
+
+# <FlightX> = [ <Message1>, <Message2>, <Message3>, ... ]
+
+# <MessageY> = instance of class FlightMessage
+
+#[  
+#    [
+#        FlightMessage('ClientHello', 54)
+#    ],
+#    [
+#        FlightMessage('ServerHello', 78),
+#        FlightMessage('ClientHello', 54)
+#    ]
+#]
+
+
+class FlightMessage(object):
+
+    def __init__(self, name, length):
+        self.name = name
+        self.length = length
+
 
 #
 # _____________________________________________________________________________
@@ -104,6 +133,11 @@ class DTLSClient(ProtocolAgent):
 
         # client received ServerHello message
     
+
+        if message.getName() in self.receivedFlight2 or message.getName() in self.receivedFlight4:
+            self.log("Dropping Message")
+
+
         if message.getName() in DTLSClient.msgListFlight2 and \
                 message.getName() not in self.receivedFlight2:
             self.receivedFlight2[message.getName()] = True            
@@ -120,12 +154,24 @@ class DTLSClient(ProtocolAgent):
                 self.HandShakeTime=self.scheduler.getTime()
 
 
+
+###         Log of the missing messages from flight2
            
  
-        elif message.getName() in self.receivedFlight2 or \
-                message.getName() in self.receivedFlight4:
-            print("Dropping Message")
+        if message.getName() in DTLSClient.msgListFlight2 and \
+                len([val for val in DTLSClient.msgListFlight2 \
+                        if val not in self.receivedFlight2])>0:
+            print 'Flight 2 still missing : ',[val for val in \
+                    DTLSClient.msgListFlight2 if val not in self.receivedFlight2]
 
+
+###         Log of the missing messages from flight4
+
+        if message.getName() in DTLSClient.msgListFlight4 and \
+                len([val for val in DTLSClient.msgListFlight4 if \
+                        val not in self.receivedFlight4])>0:
+            print 'Flight 4 still missing : ',[val for val in \
+                    DTLSClient.msgListFlight4 if val not in self.receivedFlight4]
 
                             
 #
@@ -193,6 +239,15 @@ class DTLSServer(ProtocolAgent):
 
         ProtocolAgent.receive(self, message, sender)
 
+
+
+#check if message should be dropped or not
+        if message.getName() in self.receivedFlight3 and \
+                message.getName() in self.flight3Duplicate:
+            self.log("Dropping Message")
+
+
+
         # server received ClientHello message
         if message.getName() == 'ClientHello':
             self.transmitFlight2()
@@ -222,9 +277,16 @@ class DTLSServer(ProtocolAgent):
                 self.flight3Duplicate={}
 
 
-        elif message.getName() in self.receivedFlight3 and message.getName() in self.flight3Duplicate:
-            print ("Dropping Message")
 
+
+
+###         Log of the missing messages from flight3
+
+        if message.getName() in DTLSServer.msgListFlight3 and \
+                len([val for val in DTLSServer.msgListFlight3 if \
+                        val not in self.receivedFlight3])>0:
+            print 'Flight 3 still missing : ',[val for val in \
+                    DTLSServer.msgListFlight3 if val not in self.receivedFlight3]
 
 
 
@@ -308,8 +370,11 @@ def plotBarGraph(noOfHandshakes,Hanshakelist_tuple):
 def plotHistogram(HandshakeTimesList):
     
 
-    bins = np.linspace(8,1000,10)
-    plt.hist(HandshakeTimesList,bins,alpha=0.5,label='1')
+#    bins = np.linspace(8,1000,10)
+    if max(HandshakeTimesList)-min(HandshakeTimesList)>1000:
+        plt.xscale('log')
+		
+    plt.hist(HandshakeTimesList,bins='auto',alpha=0.5,label='1')
     plt.title("Histogram")
     plt.xlabel("Handshaketime")
     plt.ylabel("Frequency")
@@ -435,10 +500,10 @@ def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(1000,HandshakeList,LossRate=0.2)
+    Handshake_HS1(1,HandshakeList,LossRate=0.6)
 
-#    print HandshakeList
-    plotHistogram(HandshakeList)
+    print HandshakeList
+#    plotHistogram(HandshakeList)
 #    plot_Mean_Variance_Median_Std_Against_LossRate()
 
     pass
