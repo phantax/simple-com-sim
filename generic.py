@@ -26,6 +26,22 @@ class GenericClientServer(ProtocolAgent):
         # keep track of the messages received
         self.receptions = [[0 for msg in flight] for flight in flightStructure]
 
+        # the retransmission timeout generators
+        self.timeoutGenerator = (2**i for i in itertools.count())
+        self.timeouts = []
+
+    def getTimeout(self, previous_retransmissions):
+        while previous_retransmissions >= len(self.timeouts):
+            try:
+                self.timeouts.append(self.timeoutGenerator.next())
+            except StopIteration:
+                break
+        if previous_retransmissions < len(self.timeouts):
+            return self.timeouts[previous_retransmissions]
+        else:
+            # No further retransmissions
+            return None
+
     def transmitFlight(self, flight):
 
         if not self.checkFlightNumber(flight):
@@ -36,18 +52,23 @@ class GenericClientServer(ProtocolAgent):
         else:
             self.log('Retransmitting flight #{0}'.format(flight + 1))
 
-        self.transmissions[flight] += 1
+        # is this flight transmitted for the first time ...
+        # equivalently: if flight == self.currentFlight
+        if self.transmissions[flight] == 0:
+            # >>> YES >>>
+            # move on to the next flight
+            self.currentFlight += 1 
 
         # transmit messages one by one
         for msg in self.flights[flight]:
             self.transmit(copy.deepcopy(msg))
 
-        if flight == self.currentFlight:
-            # move on to the next flight
-            self.currentFlight += 1
+        timeout = self.getTimeout(self.transmissions[flight])
+        if timeout is not None:
+            self.scheduler.registerEventRel(Callback(self.checkFlight, flight=flight), timeout)
 
-        timeout = 1.
-        self.scheduler.registerEventRel(Callback(self.checkFlight, flight=flight), timeout)
+        # remember that this flight has been (re)transmitted 
+        self.transmissions[flight] += 1
        
     def checkFlight(self, flight):
         
