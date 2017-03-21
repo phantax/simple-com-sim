@@ -179,9 +179,17 @@ class ProtocolAgent(object):
         self.medium = None
         self.logger = params.get('logger', None)
         self.txQueue = collections.deque()
+        self.txCount = 0
+        self.rxCount = 0
 
     def getName(self):
         return self.name
+
+    def getTxCount(self):
+        return self.txCount
+
+    def getRxCount(self):
+        return self.rxCount
 
     def registerMedium(self, medium):
         if self.medium:
@@ -200,12 +208,12 @@ class ProtocolAgent(object):
         # add message to transmission queue
         self.txQueue.append((message, receiver, self.scheduler.getTime()))
 
-        # detect message congestion
+        # detect message jam
         if len(self.txQueue):
             times = [m[2] for m in self.txQueue]
             if (max(times) - min(times)) > 0.:
                 self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
-                        ' message congestion for {0} (N = {1}, d = {2:>.3f}s)' \
+                        ' message jam for {0} (N = {1}, d = {2:>.3f}s)' \
                                 .format(self.name, len(self.txQueue), \
                                         max(times) - min(times))))
 
@@ -213,6 +221,9 @@ class ProtocolAgent(object):
 
     # called by Medium class
     def receive(self, message, sender):
+        # track the number of bytes received
+        if isinstance(message, ProtocolMessage):
+            self.rxCount += message.getLength()
         # sender is agent object instance
         self.log(TextFormatter.makeBoldGreen(
                 '--> {0} received message {1} from {2}'.format(
@@ -224,7 +235,11 @@ class ProtocolAgent(object):
             # no message in the transmission queue
             return None, None
         else:
-            return self.txQueue.popleft()[:2]
+            message, receiver = self.txQueue.popleft()[:2]
+            # track the number of bytes sent
+            if isinstance(message, ProtocolMessage):
+                self.txCount += message.getLength()
+            return message, receiver
 
     def log(self, text):
         if self.logger:        
