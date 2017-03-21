@@ -66,8 +66,8 @@ class DTLSClient(ProtocolAgent):
             'CertificateRequest', 'ServerHelloDone']
     msgListFlight4 = ['ServerChangeCipherSpec','ServerFinished']
 
-    def __init__(self, name, scheduler, **params):
-        ProtocolAgent.__init__(self, name, scheduler, **params)
+    def __init__(self, name,scheduler,RetransmissionCriteria,**params):
+        ProtocolAgent.__init__(self, name, scheduler,**params)
         self.HandShakeTime=0
         self.receivedFlight2 = {}
         self.receivedFlight4 = {}
@@ -75,6 +75,7 @@ class DTLSClient(ProtocolAgent):
         self.flight3_Retransmission_Count=-1
         self.ClientDataCounter=0
         self.RetransmissionFlag=False        
+        self.Retransmission_Criteria=RetransmissionCriteria        
 
     def trigger(self):
         self.transmitFlight1()
@@ -88,9 +89,13 @@ class DTLSClient(ProtocolAgent):
             self.RetransmissionFlag=True                
 
 #       Retransmission Timeout (doubles every timeout)
-        self.scheduler.registerEventRel(Callback(self.checkFlight1), \
-                 10.0 * math.pow(2,self.flight1_Retransmission_Count))
+        if self.Retransmission_Criteria=='exponential':
+            self.scheduler.registerEventRel(Callback(self.checkFlight1), \
+                     10.0 * math.pow(2,self.flight1_Retransmission_Count))
 
+        elif self.Retransmission_Criteria=='linear':
+            self.scheduler.registerEventRel(Callback(self.checkFlight1), \
+                     10.0 * (self.flight1_Retransmission_Count+1))            
 
     def transmitFlight3(self):
         
@@ -107,9 +112,15 @@ class DTLSClient(ProtocolAgent):
 
         if self.flight3_Retransmission_Count>10:
             self.RetransmissionFlag=True
-    	self.scheduler.registerEventRel(Callback(self.checkFlight3),\
-                 10.0 * math.pow(2,self.flight3_Retransmission_Count))
+
+        if self.Retransmission_Criteria=='exponential':
+        	self.scheduler.registerEventRel(Callback(self.checkFlight3),\
+                     10.0 * math.pow(2,self.flight3_Retransmission_Count))
 	
+        elif self.Retransmission_Criteria=='linear':
+            self.scheduler.registerEventRel(Callback(self.checkFlight3), \
+                     10.0 * (self.flight3_Retransmission_Count+1)) 
+
 	#Retransmit until atleast 1 msg from Flight 2 is received
     def checkFlight1(self):
         if [self.receivedFlight2.get(msg, False) \
@@ -185,7 +196,7 @@ class DTLSServer(ProtocolAgent):
             'ChangeCipherSpec', 'Finished']
 
 
-    def __init__(self, name, scheduler, **params):
+    def __init__(self, name, scheduler, RetransmissionCriteria,**params):
         
         ProtocolAgent.__init__(self, name, scheduler, **params)
         self.receivedFlight3 = {}
@@ -194,7 +205,7 @@ class DTLSServer(ProtocolAgent):
         self.flight4_Retransmission_Count=-1
         self.ServerDataCounter=0
         self.RetransmissionFlag=False        
-
+        self.Retransmission_Criteria=RetransmissionCriteria
 
     def transmitFlight4(self):
 
@@ -218,9 +229,17 @@ class DTLSServer(ProtocolAgent):
         self.ServerDataCounter+=   1202
 
         if self.flight2_Retransmission_Count>10:
-            self.RetransmissionFlag=True     
-        self.scheduler.registerEventRel(Callback(self.checkFlight2),\
-                10.0 * math.pow(2,self.flight2_Retransmission_Count)) 
+            self.RetransmissionFlag=True
+
+        if self.Retransmission_Criteria=='exponential':     
+            self.scheduler.registerEventRel(Callback(self.checkFlight2),\
+                    10.0 * math.pow(2,self.flight2_Retransmission_Count)) 
+
+        elif self.Retransmission_Criteria=='linear':
+            self.scheduler.registerEventRel(Callback(self.checkFlight2), \
+                     10.0 * (self.flight2_Retransmission_Count+1)) 
+
+
 
     #Retransmit until atleast 1 msg from Flight 3 is received
     def checkFlight2(self):
@@ -390,62 +409,156 @@ def plotHistogram(HandshakeTimesList):
 
 
 
-def plot_Mean_Variance_Median_Std_Against_LossRate():
-    Loss_Rate=0
-    mean_list=[]    
-    var_list=[]
-    std_list=[]
-    median_list=[]
+def plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=0):
+
+    if Comparison==0:
+        Loss_Rate=0
+        mean_list=[]    
+        var_list=[]
+        std_list=[]
+        median_list=[]
+        
+        Loss_Rate_list=[]
+
+        while Loss_Rate<0.7:
+            Loss_Rate+=0.01
+            Loss_Rate_list.append(Loss_Rate)
+            tmp_list=[]
+            Handshake_HS1(100,tmp_list,LossRate=Loss_Rate)
+
+            if len(tmp_list)>0:
+                mean_list.append(np.mean(tmp_list))
+                var_list.append(np.var(tmp_list))
+                std_list.append(np.std(tmp_list))
+                median_list.append(np.median(tmp_list))
+
+        
+    #    print 'mean: ',mean_list
+    #    print 'var:  ',var_list
+    #    print 'std:  ',std_list
+    #    print 'med:  ',median_list
+
+        plt.figure(1)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Mean')
+        plt.title('Loss Rate v/s Mean Handshake Time')
+        plt.plot(Loss_Rate_list,mean_list)
+
+
+        plt.figure(2)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Variance')
+        plt.title('Loss Rate v/s Variance of Handshake Time')
+        plt.plot(Loss_Rate_list,var_list)
+
+
+        plt.figure(3)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Std')
+        plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
+        plt.plot(Loss_Rate_list,std_list)
+
+
+        plt.figure(4)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Median')
+        plt.title('Loss Rate v/s Median of Handshake Time')
+        plt.plot(Loss_Rate_list,median_list)
+
+
+        plt.show()
+
+    elif Comparison==1:
+        Loss_Rate=0
+        mean_list_exp=[]
+        mean_list_lin=[]    
+        var_list_exp=[]
+        var_list_lin=[]
+        std_list_exp=[]
+        std_list_lin=[]
+        median_list_exp=[]
+        median_list_lin=[]
+        
+        Loss_Rate_list=[]
+
+        while Loss_Rate<0.7:
+            Loss_Rate+=0.05
+            Loss_Rate_list.append(Loss_Rate)
+            tmp_list_exp=[]
+            tmp_list_lin=[]
+
+            Handshake_HS1(100,tmp_list_exp,Retransmit='exponential',LossRate=Loss_Rate)
+            Handshake_HS1(100,tmp_list_lin,Retransmit='linear',LossRate=Loss_Rate)
+            if len(tmp_list_exp)>0:
+                mean_list_exp.append(np.mean(tmp_list_exp))
+                var_list_exp.append(np.var(tmp_list_exp))
+                std_list_exp.append(np.std(tmp_list_exp))
+                median_list_exp.append(np.median(tmp_list_exp))
+            
+            if len(tmp_list_lin)>0:
+                mean_list_lin.append(np.mean(tmp_list_lin))
+                var_list_lin.append(np.var(tmp_list_lin))
+                std_list_lin.append(np.std(tmp_list_lin))
+                median_list_lin.append(np.median(tmp_list_lin))
+
+
+
+
+
+        
+#    print 'mean exp: ',len(mean_list_exp)
+#    print 'mean lin: ',len(mean_list_lin)
+#    print 'Loss rate: ',len(Loss_Rate_list)
+    #    print 'var:  ',var_list
+    #    print 'std:  ',std_list
+    #    print 'med:  ',median_list
+
+
+
+        plt.figure(1)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Mean')
+        plt.title('Loss Rate v/s Mean Handshake Time')
+        plt.plot(Loss_Rate_list,mean_list_exp,'r',Loss_Rate_list,mean_list_lin,'b')
+
+
+        plt.figure(2)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Variance')
+        plt.title('Loss Rate v/s Variance of Handshake Time')
+        plt.plot(Loss_Rate_list,var_list_exp,'r',Loss_Rate_list,var_list_lin,'b')
+
+
+        plt.figure(3)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Std')
+        plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
+        plt.plot(Loss_Rate_list,std_list_exp,'r',Loss_Rate_list,std_list_lin,'b')
+
+
+        plt.figure(4)
+        plt.xlabel('Loss Rate')
+        plt.ylabel('Median')
+        plt.title('Loss Rate v/s Median of Handshake Time')
+        plt.plot(Loss_Rate_list,median_list_exp,'r',Loss_Rate_list,median_list_lin,'b')
+
+
+        plt.show()
+
+
+
+
+
+#
+#________________________________________________________________________________________
+#
+
+
+
+
     
-    Loss_Rate_list=[]
-
-    while Loss_Rate<0.7:
-        Loss_Rate+=0.05
-        Loss_Rate_list.append(Loss_Rate)
-        tmp_list=[]
-        Handshake_HS1(100,tmp_list,LossRate=Loss_Rate)
-
-        if len(tmp_list)>0:
-            mean_list.append(np.mean(tmp_list))
-            var_list.append(np.var(tmp_list))
-            std_list.append(np.std(tmp_list))
-            median_list.append(np.median(tmp_list))
-
-    
-#    print 'mean: ',mean_list
-#    print 'var:  ',var_list
-#    print 'std:  ',std_list
-#    print 'med:  ',median_list
-
-    plt.figure(1)
-    plt.xlabel('Loss Rate')
-    plt.ylabel('Mean')
-    plt.title('Loss Rate v/s Mean Handshake Time')
-    plt.plot(Loss_Rate_list,mean_list)
 
 
-    plt.figure(2)
-    plt.xlabel('Loss Rate')
-    plt.ylabel('Variance')
-    plt.title('Loss Rate v/s Variance of Handshake Time')
-    plt.plot(Loss_Rate_list,var_list)
-
-
-    plt.figure(3)
-    plt.xlabel('Loss Rate')
-    plt.ylabel('Std')
-    plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
-    plt.plot(Loss_Rate_list,std_list)
-
-
-    plt.figure(4)
-    plt.xlabel('Loss Rate')
-    plt.ylabel('Median')
-    plt.title('Loss Rate v/s Median of Handshake Time')
-    plt.plot(Loss_Rate_list,median_list)
-
-
-    plt.show()
 
 
 
@@ -458,7 +571,7 @@ def plot_Mean_Variance_Median_Std_Against_LossRate():
 
 
 
-def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
+def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
     
     while(noOfTimes):
         noOfTimes-=1
@@ -467,8 +580,8 @@ def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
 
         scheduler = Scheduler()
 
-        server = DTLSServer('server1', scheduler, logger=logger)
-        client = DTLSClient('client', scheduler, logger=logger)
+        server = DTLSServer('server1', scheduler,Retransmit, logger=logger)
+        client = DTLSClient('client', scheduler,Retransmit, logger=logger)
 
         medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, inter_msg_time=0.001, logger=logger)
         medium.registerAgent(server)
@@ -500,11 +613,11 @@ def Handshake_HS1(noOfTimes,listOfTimes,LossRate=0.1):
 def main(argv):
     HandshakeList=[]
 
-    Handshake_HS1(1,HandshakeList,LossRate=0.6)
+    Handshake_HS1(1,HandshakeList,'linear',LossRate=0.)
 
     print HandshakeList
 #    plotHistogram(HandshakeList)
-#    plot_Mean_Variance_Median_Std_Against_LossRate()
+#    plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=1)
 
     pass
 
