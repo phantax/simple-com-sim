@@ -4,119 +4,13 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-import copy
-
-
-
-class GenericClientServer(ProtocolAgent):
-
-    def __init__(self, name, scheduler, flightStructure, *param, **kwparam):
-
-        ProtocolAgent.__init__(self, name, scheduler, **kwparam)
-
-        # the flight structure defining the communication sequence
-        self.flights = flightStructure
-
-        # the current flight
-        self.currentFlight = 0
-
-        # the number of transmissions for each flight (one entry per flight)
-        self.transmissions = [0] * len(flightStructure)
-
-        # keep track of the messages received
-        self.receptions = [[0 for msg in flight] for flight in flightStructure]
-
-        # the retransmission timeout generators
-        self.timeoutGenerator = (2**i for i in itertools.count())
-        self.timeouts = []
-
-    def getTimeout(self, previous_retransmissions):
-        while previous_retransmissions >= len(self.timeouts):
-            try:
-                self.timeouts.append(self.timeoutGenerator.next())
-            except StopIteration:
-                break
-        if previous_retransmissions < len(self.timeouts):
-            return self.timeouts[previous_retransmissions]
-        else:
-            # No further retransmissions
-            return None
-
-    def transmitFlight(self, flight):
-
-        if not self.checkFlightNumber(flight):
-            raise Exception('Trying to transmit the wrong flight!')
-
-        if self.transmissions[flight] == 0:
-            self.log('Transmitting flight #{0}'.format(flight + 1))
-        else:
-            self.log('Retransmitting flight #{0}'.format(flight + 1))
-
-        # is this flight transmitted for the first time ...
-        # equivalently: if flight == self.currentFlight
-        if self.transmissions[flight] == 0:
-            # >>> YES >>>
-            # move on to the next flight
-            self.currentFlight += 1 
-
-        # transmit messages one by one
-        for msg in self.flights[flight]:
-            self.transmit(copy.deepcopy(msg))
-
-        timeout = self.getTimeout(self.transmissions[flight])
-        if timeout is not None:
-            self.scheduler.registerEventRel(Callback(self.checkFlight, flight=flight), timeout)
-
-        # remember that this flight has been (re)transmitted 
-        self.transmissions[flight] += 1
-       
-    def checkFlight(self, flight):
-        
-        nextFlight = flight + 1
-
-        if max(self.receptions[nextFlight]) == 0:
-            # we didn't received any message of the next flight 
-            # => need to retransmit
-            self.transmitFlight(flight)
-
-    def receive(self, message, sender):
-        ProtocolAgent.receive(self, message, sender)
-
-        # the list of expected messages in the current flight
-        expectedMsgs = [msg.getName() for msg in self.flights[self.currentFlight]]
-
-        # detect unexpected messages
-        if message.getName() not in expectedMsgs:
-            self.log('Received unexpected message "{0}"'.format(message.getName()))
-
-        # remember that the message has been received once (more)
-        self.receptions[self.currentFlight][expectedMsgs.index(message.getName())] += 1
-
-        # check whether flight has been received completely ...
-        if min(self.receptions[self.currentFlight]) > 0:
-            # >>> YES >>>
-            self.log('Flight {0} has been received completely'.format(self.currentFlight + 1))
-            # move on to the next flight
-            self.currentFlight += 1
-            # check whether it's the last flight
-            if (self.currentFlight + 1) == len(self.flights):
-                self.log('Communication sequence completed at time {0}'.format(self.scheduler.getTime()))
-                self.HandShakeTime = self.scheduler.getTime()
-            else:
-                # transmit next flight
-                self.transmitFlight(self.currentFlight)
-        else:
-            # >>> NO >>>
-            missing = ', '.join([expectedMsgs[i] for i in range(len(expectedMsgs)) \
-                    if self.receptions[self.currentFlight][i] == 0])
-            self.log('Still missing from flight {0}: {1}'.format(self.currentFlight + 1, missing))
 
 
 class DTLSClient(GenericClientServer):
 
 
     def __init__(self, name, scheduler, flightStructure, RetransmissionCriteria,*param,**kwparam):
-        GenericClientServer.__init__(self, name, scheduler,**kwparam)
+        GenericClientServer.__init__(self, name, scheduler,flightStructure,**kwparam)
 
         self.HandShakeTime=0
 
@@ -133,8 +27,8 @@ class DTLSClient(GenericClientServer):
 
 class DTLSServer(GenericClientServer):
 
-    def __init__(self,name,scheduler,RetransmissionCriteria,*param,**kwparam):
-        GenericClientServer.__init__(self, name, scheduler,**kwparam)
+    def __init__(self,name,scheduler,flightStructure,RetransmissionCriteria,*param,**kwparam):
+        GenericClientServer.__init__(self, name, scheduler,flightStructure,**kwparam)
 
         self.RetransmissionFlag=False        
         self.Retransmission_Criteria=RetransmissionCriteria
@@ -408,13 +302,34 @@ def plotHistogram(HandshakeTimesList):
 
 
 def main(argv):
-    HandshakeList=[]
+#    HandshakeList=[]
 
-    Handshake_HS1(100,HandshakeList,'linear',LossRate=0.1)
+#    Handshake_HS1(100,HandshakeList,'linear',LossRate=0.1)
 
 #    print HandshakeList
-    plotHistogram(HandshakeList)
+#    plotHistogram(HandshakeList)
 #    plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=1)
+
+
+
+    logger = Logger()
+
+    scheduler = Scheduler()
+
+    server=DTLSServer('server1',scheduler,[[ProtocolMessage('A1',10),ProtocolMessage('A2',11)],[ProtocolMessage('B',20)],[ProtocolMessage('C',30)],[ProtocolMessage('D',40)]],'exponential',logger=logger)
+    client=DTLSClient('client1',scheduler,[[ProtocolMessage('A1',10),ProtocolMessage('A2',11)],[ProtocolMessage('B',20)],[ProtocolMessage('C',30)],[ProtocolMessage('D',40)]],'exponential',logger=logger)
+
+    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0, inter_msg_time=0.001, logger=logger)
+    medium.registerAgent(server)
+    medium.registerAgent(client)
+    client.trigger()
+        
+    while not scheduler.empty():
+        scheduler.run()
+
+
+
+
 
     pass
 
