@@ -405,6 +405,12 @@ class GenericClientServer(ProtocolAgent):
         self.timeoutGenerator = (2**i for i in itertools.count())
         self.timeouts = []
 
+    def gotoNextFlight(self):
+        # move on to the next flight if this is not the last flight
+        if (self.currentFlight + 1) < len(self.flights):
+            self.currentFlight += 1
+            self.log('Info: Now at flight #{0}'.format(self.currentFlight + 1))
+
     def getTimeout(self, previous_retransmissions):
         while previous_retransmissions >= len(self.timeouts):
             try:
@@ -427,14 +433,6 @@ class GenericClientServer(ProtocolAgent):
         else:
             self.log('Retransmitting flight #{0}'.format(flight + 1))
 
-        # is this flight transmitted for the first time ...
-        # equivalently: if flight == self.currentFlight
-        if self.transmissions[flight] == 0:
-            # >>> YES >>>
-            # move on to the next flight if this is not the last flight
-            if (flight + 1) < len(self.flights):
-                self.currentFlight += 1 
-
         # transmit messages one by one
         for msg in self.flights[flight]:
             self.transmit(copy.deepcopy(msg))
@@ -451,6 +449,13 @@ class GenericClientServer(ProtocolAgent):
         # clear reception tracking of second-to-last flight
         if len(self.flights) > 1 and (flight + 1) == len(self.flights):
             self.receptions_stl_flight = [False] * len(self.flights[-2])
+
+        # is this flight transmitted for the first time ...
+        # equivalently: if self.transmissions[flight] == 0
+        if flight == self.currentFlight:
+            # >>> YES >>>
+            # move on to the next flight if this is not the last flight
+            self.gotoNextFlight()
 
     def checkFlight(self, flight):
         if max(self.receptions[flight + 1]) == 0:
@@ -471,8 +476,9 @@ class GenericClientServer(ProtocolAgent):
 
         # detect unexpected messages
         if message.getName() not in expectedMsgs:
-            self.log('Received unexpected message "{0}". Expecting one of {1}'\
-                    .format(message.getName(), ', '.join(expectedMsgs)))
+            self.log('Received unexpected message "{0}". Expecting one of {1}' \
+                    .format(message.getName(), ', '.join( \
+                            ['<{0}>'. format(msg) for msg in expectedMsgs])))
 
         # remember that the message has been received once (more)
         self.receptions[expectedFlight][expectedMsgs.index(message.getName())] += 1
@@ -486,22 +492,25 @@ class GenericClientServer(ProtocolAgent):
             # check whether flight has been received completely ...
             if min(self.receptions[self.currentFlight]) > 0:
                 # >>> YES >>>
-                self.log('Flight {0} has been received completely'.format(self.currentFlight + 1))
+                self.log('Flight #{0} has been received completely' \
+                        .format(self.currentFlight + 1))
                 # move on to the next flight
-                self.currentFlight += 1
+                self.gotoNextFlight()
                 # transmit next flight
                 self.transmitFlight(self.currentFlight)
             else:
                 # >>> NO >>>
-                missing = ', '.join([expectedMsgs[i] for i in range(len(expectedMsgs)) \
-                        if self.receptions[self.currentFlight][i] == 0])
-                self.log('Still missing from flight {0}: {1}'.format(self.currentFlight + 1, missing))
+                missing = ', '.join(['<{0}>'.format(expectedMsgs[i]) \
+                        for i in range(len(expectedMsgs)) \
+                                if self.receptions[self.currentFlight][i] == 0])
+                self.log('Info: Messages still missing from flight #{0}: {1}' \
+                        .format(self.currentFlight + 1, missing))
         elif self.checkFlightNumber(self.currentFlight):
             # >>> we received a retransmission of the second-to-last flight
             # retransmit the last flight if we re-received the second-to-last flight completely
             if len(self.flights) > 1 and self.receptions_stl_flight.count(False) == 0:
                 self.transmitFlight(self.currentFlight)
-                self.log('The last flight (Flight #{0}) has been re-received completely'.format(expectedFlight + 1))
+                self.log('The last flight (flight #{0}) has been re-received completely'.format(expectedFlight + 1))
         else:
             # >>> we received the last flight
             self.log('Communication sequence completed at time {0}'.format(self.scheduler.getTime()))
