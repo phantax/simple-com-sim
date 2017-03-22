@@ -450,7 +450,7 @@ class GenericClientServer(ProtocolAgent):
        
         # clear reception tracking of second-to-last flight
         if len(self.flights) > 1 and (flight + 1) == len(self.flights):
-            self.receptions_stl_flight = [False] * len(flightStructure[-2])
+            self.receptions_stl_flight = [False] * len(self.flights[-2])
 
     def checkFlight(self, flight):
         if max(self.receptions[flight + 1]) == 0:
