@@ -80,8 +80,15 @@ def main(argv):
     timeouts = None
     #timeouts = lambda i: 2**i
 
-    server = GenericServerAgent('server1', scheduler, flights, medium=medium, timeouts=timeouts, logger=logger)
-    client = GenericClientAgent('client1', scheduler, flights, medium=medium, timeouts=timeouts, logger=logger)
+    blocker = BlockingAgent('blocker', scheduler, 1000., 0.0009, queuing=True)
+    blocker.start()
+
+    server = GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
+    client = GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
+
+    medium.registerAgent(blocker, 0)
+    medium.registerAgent(server)
+    medium.registerAgent(client)
 
     client.trigger()
         

@@ -203,10 +203,49 @@ class Agent(object):
     def offerMedium(self, medium):
         return False
 
+    def receive(self, message, sender):
+        pass
+
     def log(self, text):
         if self.logger:        
             header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
             self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
+
+
+class BlockingAgent(Agent):
+
+    def __init__(self, name, scheduler, frequency, duration, **params):
+        Agent.__init__(self, name, scheduler, **params)
+        self.frequency = frequency
+        self.duration = duration
+        self.running = False
+        self.queuing = params.get('queuing', False)
+        self.queue = 0
+
+    def start(self):
+        self.running = True
+        self.tick()
+
+    def stop(self):
+        self.running = False
+
+    def tick(self):
+        if self.queuing:
+            self.queue += 1
+        else:
+            self.queue = 1
+        if self.running:
+            period = 1. / self.frequency
+            self.scheduler.registerEventRel(Callback(self.tick), period)
+
+    def offerMedium(self, medium):
+        if self.queue > 0:        
+            self.queue -= 1
+            self.log('Blocking medium for {0:>.3f}s'.format(self.duration))
+            medium.block(self.duration)
+            return True
+        else:
+            return False
 
 
 class ProtocolAgent(Agent):
@@ -273,6 +312,7 @@ class ProtocolAgent(Agent):
         # track the number of bytes received
         if isinstance(message, ProtocolMessage):
             self.rxCount += message.getLength()
+
         # sender is agent object instance
         self.log(TextFormatter.makeBoldGreen(
                 '<-- received message {1} from {2}'.format(
@@ -307,6 +347,9 @@ class GenericClientServerAgent(ProtocolAgent):
 
         # the retransmission timeout function
         self.timeouts = kwparam.get('timeouts', None)
+
+        # communictation sequence complete callback
+        self.onComplete = kwparam.get('onComplete', None)
 
     def gotoNextFlight(self):
         # move on to the next flight if this is not the last flight
@@ -433,6 +476,8 @@ class GenericClientServerAgent(ProtocolAgent):
                     .format(self.scheduler.getTime()))
             self.done = True
             self.doneAtTime = self.scheduler.getTime()
+            if self.onComplete:
+                self.onComplete()
 
 
 class GenericClientAgent(GenericClientServerAgent):
@@ -467,6 +512,7 @@ class Medium(object):
     def __init__(self, scheduler, **params):
         self.scheduler = scheduler
         self.agents = {}
+        self.sortedAgents = []
         self.blocked = False
         self.name = params.get('name', 'Medium')
         self.data_rate = params.get('data_rate', None)    # None means 'unlimited'
@@ -479,11 +525,23 @@ class Medium(object):
     def getName(self):
         return self.name
 
-    def registerAgent(self, agent):
+    def registerAgent(self, agent, priority=None):
         if agent.getName() in self.agents:
             raise Exception('Agent "{0}" already registered'.format(agent.getName()))
         agent.registerMedium(self)
-        self.agents[agent.getName()] = agent
+        self.agents[agent.getName()] = agent, priority
+        self.sortAgents()
+
+    def sortAgents(self):
+
+        # sort agents with assigned priority
+        agents = [(p, a) for a, p in self.agents.values() if p is not None]
+        sortedAgents = map(lambda (p, a): a, sorted(agents))
+
+        # append agents without assigned priority
+        sortedAgents += [a for a, p in self.agents.values() if p is None]
+
+        self.sortedAgents = sortedAgents
 
     def arbitrate(self):
         """
@@ -493,7 +551,7 @@ class Medium(object):
 
         # No arbitration if medium is blocked
         if not self.blocked:
-            for agent in self.agents.values():
+            for agent in self.sortedAgents:
                 if agent.offerMedium(self):
                     break
 
@@ -572,7 +630,7 @@ class Medium(object):
 
         # make sender an agent object instance
         if isinstance(sender, str):
-            sender = self.agents[sender]
+            sender, priority = self.agents[sender]
 
         # There is a message loss probability different
         # from zero only for ProtocolMessages
@@ -586,12 +644,13 @@ class Medium(object):
 
         if not receiver:
             # this is a broadcast (let sender not receive its own message)
-            for agent in filter(lambda a: a != sender, self.agents.values()):
+            for agent, priority in filter( \
+                    lambda (a, p): a != sender, self.agents.values()):
                 self.dispatchMsg(message, sender, agent, loss_prop, duration)
         else:
             # make receiver an object instance
             if isinstance(receiver, str):
-                receiver = self.agents[receiver]
+                receiver, priority = self.agents[receiver]
             self.dispatchMsg(message, sender, receiver, loss_prop, duration)
 
     def dispatchMsg(self, message, sender, receiver, loss_prop, duration):
