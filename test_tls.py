@@ -95,6 +95,9 @@ def main(argv):
     scheduler.run()
 
 
+    server.printStatistics()
+    client.printStatistics()
+
 #
 # _____________________________________________________________________________
 #

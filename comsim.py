@@ -337,8 +337,12 @@ class GenericClientServerAgent(ProtocolAgent):
         # the number of transmissions for each flight (one entry per flight)
         self.transmissions = [0] * len(flightStructure)
 
-        # keep track of the messages received
+        # keep track of the number of times messages have been received
         self.receptions = [[0 for msg in flight] for flight in flightStructure]
+
+        # keep track of the time when a message has been received first
+        self.first_receptions = \
+                [[None for msg in flight] for flight in flightStructure]
 
         # additionally keep track of the messages received in the second-to-last flight
         if len(flightStructure) > 1:
@@ -350,6 +354,16 @@ class GenericClientServerAgent(ProtocolAgent):
 
         # communictation sequence complete callback
         self.onComplete = kwparam.get('onComplete', None)
+
+    def printStatistics(self):
+
+        for i in range(len(self.flights)):
+            print('Flight #{0}:'.format(i + 1))
+            if not self.isTXFlight(i):
+                for j in range(len(self.flights[i])):
+                    print('> {0}: received first @ {1:>.3f}s'.format( \
+                            self.flights[i][j].getName(), \
+                            self.first_receptions[i][j]))
 
     def gotoNextFlight(self):
         # move on to the next flight if this is not the last flight
@@ -366,7 +380,7 @@ class GenericClientServerAgent(ProtocolAgent):
 
     def transmitFlight(self, flight):
 
-        if not self.checkFlightNumber(flight):
+        if not self.isTXFlight(flight):
             raise Exception('Trying to transmit the wrong flight!')
 
         if self.transmissions[flight] == 0:
@@ -415,7 +429,7 @@ class GenericClientServerAgent(ProtocolAgent):
         ProtocolAgent.receive(self, message, sender)
 
         expectedFlight = self.currentFlight
-        if (self.currentFlight  + 1) == len(self.flights) and self.checkFlightNumber(self.currentFlight):
+        if (self.currentFlight  + 1) == len(self.flights) and self.isTXFlight(self.currentFlight):
             # >>> we are handling the last flight and are supposed to potentially retransmit it >>>
             expectedFlight -= 1
 
@@ -434,8 +448,11 @@ class GenericClientServerAgent(ProtocolAgent):
             # Just ignore it
             return
 
-        # remember that the message has been received once (more)
-        self.receptions[expectedFlight][expectedMsgs.index(message.getName())] += 1
+        # remember that (and when) the message has been received once (more)
+        msgIndex = expectedMsgs.index(message.getName())
+        self.receptions[expectedFlight][msgIndex] += 1
+        if self.first_receptions[expectedFlight][msgIndex] is None:
+            self.first_receptions[expectedFlight][msgIndex] = self.scheduler.getTime()
 
         # keep track of receptions of second-to-last flight
         if len(self.flights) > 1 and (expectedFlight + 2) == len(self.flights):
@@ -460,7 +477,7 @@ class GenericClientServerAgent(ProtocolAgent):
                 self.log('Messages still missing from flight #{0}: {1}' \
                         .format(self.currentFlight + 1, missing))
 
-        elif self.checkFlightNumber(self.currentFlight):
+        elif self.isTXFlight(self.currentFlight):
             # >>> we received a retransmission of the second-to-last flight
             # retransmit the last flight if we re-received the second-to-last flight completely
             if len(self.flights) > 1 and self.receptions_stl_flight.count(False) == 0:
@@ -491,7 +508,7 @@ class GenericClientAgent(GenericClientServerAgent):
         self.currentFlight = 0
         self.transmitFlight(self.currentFlight)
 
-    def checkFlightNumber(self, flight):
+    def isTXFlight(self, flight):
         # Clients transmit even flight numbers (0, 2, ...)
         return (flight % 2) == 0
 
@@ -502,8 +519,8 @@ class GenericServerAgent(GenericClientServerAgent):
         GenericClientServerAgent.__init__( \
                 self, name, scheduler, flightStructure, **kwparam)
 
-    def checkFlightNumber(self, flight):
-        # Clients transmit odd flight numbers (1, 3, ...)
+    def isTXFlight(self, flight):
+        # Server transmit odd flight numbers (1, 3, ...)
         return (flight % 2) == 1
 
 
