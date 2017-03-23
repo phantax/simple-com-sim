@@ -200,6 +200,7 @@ class ProtocolAgent(object):
 
     # called by subclasses of ProtocolAgent
     def transmit(self, message, receiver=None):
+
         # receiver might be agent name or agent object instance
         if not self.medium:
             raise Exception('Agent "{0}" not registered with any medium'.format(self.name))
@@ -210,12 +211,12 @@ class ProtocolAgent(object):
         # add message to transmission queue
         self.txQueue.append((message, receiver, self.scheduler.getTime()))
 
-        # detect message jam
+        # detect message congestion
         if len(self.txQueue):
             times = [m[2] for m in self.txQueue]
             if (max(times) - min(times)) > 0.:
                 self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
-                        ' message jam for {0} (N = {1}, d = {2:>.3f}s)' \
+                        ' message congestion for {0} (N = {1}, d = {2:>.3f}s)' \
                                 .format(self.name, len(self.txQueue), \
                                         max(times) - min(times))))
 
