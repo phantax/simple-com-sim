@@ -183,16 +183,15 @@ class ProtocolMessage(Message):
         
         fragments = []
 
-        iFrag = 0
         msgLen = self.getLength()
         while msgLen > 0:
             lenFrag = min(msgLen, lenPayload)
             msgLen -= lenFrag
-            fragments.append(ProtocolMessage('{0}.f{1}' \
-                    .format(self.getName(), iFrag), lenFrag + lenFixed))
-            iFrag += 1
+            fragments.append(ProtocolMessage('{0}.f{1}'.format( \
+                    self.getName(), len(fragments)), lenFrag + lenFixed))
 
         return fragments
+
 
 class Agent(object):
 
