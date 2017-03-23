@@ -124,10 +124,13 @@ class Scheduler(object):
     def getTime(self):
         return self.time
 
-    def empty(self):
+    def done(self):
         return self.queue.empty()
 
-    def run(self):
+    def runStep(self):
+        """
+        Run one single step
+        """
 
         if self.queue.empty():
             # there is no event to process => just do nothing
@@ -146,6 +149,10 @@ class Scheduler(object):
 
         # return the new current time
         return self.time
+
+    def run(self):
+        while not self.done():
+            self.runStep()
 
 
 class Message(object):
@@ -284,6 +291,9 @@ class GenericClientServerAgent(ProtocolAgent):
         # the current flight
         self.currentFlight = 0
 
+        # not yet done with the communication sequence
+        self.done = False
+
         # the number of transmissions for each flight (one entry per flight)
         self.transmissions = [0] * len(flightStructure)
 
@@ -295,9 +305,8 @@ class GenericClientServerAgent(ProtocolAgent):
             # >>> there is more than one flight
             self.receptions_stl_flight = [False] * len(flightStructure[-2])
 
-        # the retransmission timeout generators
-        self.timeoutGenerator = (2**i for i in itertools.count())
-        self.timeouts = []
+        # the retransmission timeout function
+        self.timeouts = kwparam.get('timeouts', None)
 
     def gotoNextFlight(self):
         # move on to the next flight if this is not the last flight
@@ -305,14 +314,9 @@ class GenericClientServerAgent(ProtocolAgent):
             self.currentFlight += 1
             self.log('Now at flight #{0}'.format(self.currentFlight + 1))
 
-    def getTimeout(self, previous_retransmissions):
-        while previous_retransmissions >= len(self.timeouts):
-            try:
-                self.timeouts.append(self.timeoutGenerator.next())
-            except StopIteration:
-                break
-        if previous_retransmissions < len(self.timeouts):
-            return self.timeouts[previous_retransmissions]
+    def getTimeout(self, index):
+        if self.timeouts:
+            return self.timeouts(index)
         else:
             # No further retransmissions
             return None
@@ -335,7 +339,8 @@ class GenericClientServerAgent(ProtocolAgent):
         if (flight + 1) < len(self.flights):
             timeout = self.getTimeout(self.transmissions[flight])
             if timeout is not None:
-                self.scheduler.registerEventRel(Callback(self.checkFlight, flight=flight), timeout)
+                self.scheduler.registerEventRel(Callback( \
+                        self.checkFlight, flight=flight), timeout)
 
         # remember that this flight has been (re)transmitted 
         self.transmissions[flight] += 1
@@ -352,9 +357,15 @@ class GenericClientServerAgent(ProtocolAgent):
             self.gotoNextFlight()
 
     def checkFlight(self, flight):
-        if max(self.receptions[flight + 1]) == 0:
-            # we didn't received any message of the next flight 
-            # => need to retransmit
+        # the second-to-last flight has to be treated differently
+        if len(self.flights) > 1 and (flight + 2) == len(self.flights):
+            # retransmit if at least one message is missing
+            doRetransmit = min(self.receptions[flight + 1]) == 0
+        else:
+            # retransmit if every message is missing
+            doRetransmit = max(self.receptions[flight + 1]) == 0
+        if doRetransmit:
+            # retransmit
             self.transmitFlight(flight)
 
     def receive(self, message, sender):
@@ -416,11 +427,12 @@ class GenericClientServerAgent(ProtocolAgent):
                 self.transmitFlight(self.currentFlight)
 
         # here: self.currentFlight == expectedFlight
-        elif min(self.receptions[self.currentFlight]) > 0:
+        elif min(self.receptions[self.currentFlight]) > 0 and not self.done:
             # >>> we received the last flight completely
             self.log('Communication sequence completed at time {0:>.3f}s' \
                     .format(self.scheduler.getTime()))
-            self.HandShakeTime = self.scheduler.getTime()
+            self.done = True
+            self.doneAtTime = self.scheduler.getTime()
 
 
 class GenericClientAgent(GenericClientServerAgent):
