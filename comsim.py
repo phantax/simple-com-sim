@@ -358,12 +358,19 @@ class GenericClientServerAgent(ProtocolAgent):
     def printStatistics(self):
 
         for i in range(len(self.flights)):
-            print('Flight #{0}:'.format(i + 1))
+            print('\nFlight #{0}:'.format(i + 1))
             if not self.isTXFlight(i):
                 for j in range(len(self.flights[i])):
-                    print('> {0}: received first @ {1:>.3f}s'.format( \
-                            self.flights[i][j].getName(), \
+                    print('--> {0}:'.format(self.flights[i][j].getName()))
+                    print('  - received: {0} time(s)'.format( \
+                            self.receptions[i][j]))
+                    print('  - first reception at: {0:>.3f}s'.format( \
                             self.first_receptions[i][j]))
+            else:
+                for j in range(len(self.flights[i])):
+                    print('--> {0}:'.format(self.flights[i][j].getName()))
+                    print('  - sent: {0} time(s)'.format( \
+                            self.transmissions[i]))
 
     def gotoNextFlight(self):
         # move on to the next flight if this is not the last flight
