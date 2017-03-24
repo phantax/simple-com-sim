@@ -187,7 +187,7 @@ class ProtocolMessage(Message):
         while msgLen > 0:
             lenFrag = min(msgLen, lenPayload)
             msgLen -= lenFrag
-            fragments.append(ProtocolMessage('{0}.f{1}'.format( \
+            fragments.append(ProtocolMessage('{0}.f{1}'.format(
                     self.getName(), len(fragments)), lenFrag + lenFixed))
 
         return fragments
@@ -310,7 +310,7 @@ class ProtocolAgent(Agent):
             if (max(times) - min(times)) > 0.:
                 self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
                         ' message congestion for {0} (N = {1}, d = {2:>.3f}s)' \
-                                .format(self.name, len(self.txQueue), \
+                                .format(self.name, len(self.txQueue),
                                         max(times) - min(times))))
 
         # trigger medium access arbitration
@@ -351,11 +351,10 @@ class GenericClientServerAgent(ProtocolAgent):
         self.transmissions = [0] * len(flightStructure)
 
         # keep track of the number of times messages have been received
-        self.receptions = [[0 for msg in flight] for flight in flightStructure]
+        self.receptions = [[0] * len(flight) for flight in flightStructure]
 
         # keep track of the time when a message has been received first
-        self.first_receptions = \
-                [[None for msg in flight] for flight in flightStructure]
+        self.first_receptions = [[None] * len(flight) for flight in flightStructure]
 
         # additionally keep track of the messages received in the second-to-last flight
         if len(flightStructure) > 1:
@@ -375,14 +374,14 @@ class GenericClientServerAgent(ProtocolAgent):
             if not self.isTXFlight(i):
                 for j in range(len(self.flights[i])):
                     print('--> {0}:'.format(self.flights[i][j].getName()))
-                    print('  - received: {0} time(s)'.format( \
+                    print('  - received: {0} time(s)'.format(
                             self.receptions[i][j]))
-                    print('  - first reception at: {0:>.3f}s'.format( \
+                    print('  - first reception at: {0:>.3f}s'.format(
                             self.first_receptions[i][j]))
             else:
                 for j in range(len(self.flights[i])):
                     print('--> {0}:'.format(self.flights[i][j].getName()))
-                    print('  - sent: {0} time(s)'.format( \
+                    print('  - sent: {0} time(s)'.format(
                             self.transmissions[i]))
 
     def gotoNextFlight(self):
@@ -416,7 +415,7 @@ class GenericClientServerAgent(ProtocolAgent):
         if (flight + 1) < len(self.flights):
             timeout = self.getTimeout(self.transmissions[flight])
             if timeout is not None:
-                self.scheduler.registerEventRel(Callback( \
+                self.scheduler.registerEventRel(Callback(
                         self.checkFlight, flight=flight), timeout)
 
         # remember that this flight has been (re)transmitted 
@@ -461,7 +460,7 @@ class GenericClientServerAgent(ProtocolAgent):
 
             # >>> We received an unexpected message
             # (probably from a previous flight) >>>
-            self.log(('Received unexpected message "{0}". ' \
+            self.log(('Received unexpected message "{0}". '
                     + 'Expecting one of {1}').format(message.getName(), ', ' \
                             .join(['<{0}>'. format(msg) for msg in expectedMsgs])))
 
@@ -501,7 +500,7 @@ class GenericClientServerAgent(ProtocolAgent):
             # >>> we received a retransmission of the second-to-last flight
             # retransmit the last flight if we re-received the second-to-last flight completely
             if len(self.flights) > 1 and self.receptions_stl_flight.count(False) == 0:
-                self.log(('The second-to-last flight (flight #{0}) has ' + \
+                self.log(('The second-to-last flight (flight #{0}) has ' +
                         'been re-received completely').format(expectedFlight + 1))
                 # do retransmission
                 self.transmitFlight(self.currentFlight)
@@ -521,7 +520,7 @@ class GenericClientAgent(GenericClientServerAgent):
 
 
     def __init__(self, name, scheduler, flightStructure, **kwparam):
-        GenericClientServerAgent.__init__( \
+        GenericClientServerAgent.__init__(
                 self, name, scheduler, flightStructure, **kwparam)
 
     def trigger(self):
@@ -536,7 +535,7 @@ class GenericClientAgent(GenericClientServerAgent):
 class GenericServerAgent(GenericClientServerAgent):
 
     def __init__(self, name, scheduler, flightStructure, **kwparam):
-        GenericClientServerAgent.__init__( \
+        GenericClientServerAgent.__init__(
                 self, name, scheduler, flightStructure, **kwparam)
 
     def isTXFlight(self, flight):
@@ -552,7 +551,10 @@ class Medium(object):
         self.sortedAgents = []
         self.blocked = False
         self.name = params.get('name', 'Medium')
-        self.data_rate = params.get('data_rate', None)    # None means 'unlimited'
+
+        # the data rate in bytes/second, None means 'unlimited'
+        self.data_rate = params.get('data_rate', None)
+
         self.msg_slot_distance = params.get('msg_slot_distance', None)      # None means 'no slotting'
         self.msg_loss_rate = params.get('msg_loss_rate', 0.)
         self.bit_loss_rate = params.get('bit_loss_rate', 0.)
@@ -607,7 +609,7 @@ class Medium(object):
             medium.arbitrate()
 
         # Use a callback to unblock the medium after <duration>
-        self.scheduler.registerEventRel( \
+        self.scheduler.registerEventRel(
                 Callback(unblock, medium=self), duration)
 
     def isBlocked(self):
@@ -653,14 +655,14 @@ class Medium(object):
             if self.data_rate is None:
                 duration = 0.
             else:
-                duration = message.getLength() / self.data_rate
+                duration = float(message.getLength()) / float(self.data_rate)
 
             # block the medium
             self.block(timeToNextSlot + duration + self.inter_msg_time)
 
             # ... and register a callback to send message at the next slot
             self.scheduler.registerEventRel(Callback(self.doMsgTX,
-                    message=message, sender=sender, receiver=receiver, \
+                    message=message, sender=sender, receiver=receiver,
                     duration=duration), timeToNextSlot)
 
     def doMsgTX(self, message, sender, receiver, duration=None):
@@ -676,12 +678,12 @@ class Medium(object):
         else:
             loss_prop = None
 
-        sender.log(TextFormatter.makeBoldBlue(('--> sending message {0} ' + \
+        sender.log(TextFormatter.makeBoldBlue(('--> sending message {0} ' +
                 '(p_loss = {1})').format(str(message), loss_prop)))
 
         if not receiver:
             # this is a broadcast (let sender not receive its own message)
-            for agent, priority in filter( \
+            for agent, priority in filter(
                     lambda (a, p): a != sender, self.agents.values()):
                 self.dispatchMsg(message, sender, agent, loss_prop, duration)
         else:
@@ -692,7 +694,7 @@ class Medium(object):
 
     def dispatchMsg(self, message, sender, receiver, loss_prop, duration):
 
-        # handle ranom message loss
+        # handle random message loss according to loss_prop
         if loss_prop is None or random.random() >= loss_prop:
             # >>> message did not get lost >>>
             if duration is None:
@@ -700,11 +702,11 @@ class Medium(object):
                 receiver.receive(message, sender)
             else:
                 # register a callback for reception after <duration>
-                self.scheduler.registerEventRel(Callback(receiver.receive, \
+                self.scheduler.registerEventRel(Callback(receiver.receive,
                         message=message, sender=sender), duration)
         else:
             # >>> message got lost >>>
-            self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' + \
+            self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
                     ' by {0}').format(sender.getName(), str(message))))
 
 
