@@ -356,6 +356,9 @@ class GenericClientServerAgent(ProtocolAgent):
         # keep track of the time when a message has been received first
         self.first_receptions = [[None] * len(flight) for flight in flightStructure]
 
+        # Flag for stopping Retransmissions
+        
+        self.Retransmission_flag=False
         # additionally keep track of the messages received in the second-to-last flight
         if len(flightStructure) > 1:
             # >>> there is more than one flight
@@ -366,6 +369,13 @@ class GenericClientServerAgent(ProtocolAgent):
 
         # communictation sequence complete callback
         self.onComplete = kwparam.get('onComplete', None)
+
+    def getTimeout(self, index):
+        if self.timeouts:
+            return self.timeouts(index)
+        else:
+            # No further retransmissions
+            return None
 
     def printStatistics(self):
 
@@ -390,13 +400,6 @@ class GenericClientServerAgent(ProtocolAgent):
             self.currentFlight += 1
             self.log('Now at flight #{0}'.format(self.currentFlight + 1))
 
-    def getTimeout(self, index):
-        if self.timeouts:
-            return self.timeouts(index)
-        else:
-            # No further retransmissions
-            return None
-
     def transmitFlight(self, flight):
 
         if not self.isTXFlight(flight):
@@ -405,7 +408,9 @@ class GenericClientServerAgent(ProtocolAgent):
         if self.transmissions[flight] == 0:
             self.log('Transmitting flight #{0}'.format(flight + 1))
         else:
-            self.log('Retransmitting flight #{0}'.format(flight + 1))
+            self.log('Retransmitting flight #{0} (transmitted {1} ' \
+                    .format(flight + 1, self.transmissions[flight]) + 
+                            'time(s) before)')
 
         # transmit messages one by one
         for msg in self.flights[flight]:
@@ -475,7 +480,7 @@ class GenericClientServerAgent(ProtocolAgent):
 
         # keep track of receptions of second-to-last flight
         if len(self.flights) > 1 and (expectedFlight + 2) == len(self.flights):
-            self.receptions_stl_flight[expectedMsgs.index(message.getName())] = True
+            self.receptions_stl_flight[msgIndex] = True
 
         if (self.currentFlight  + 1) < len(self.flights):
             # >>> we are NOT handling the last flight >>>
@@ -711,6 +716,5 @@ class Medium(object):
             # >>> message got lost >>>
             self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
                     ' by {0}').format(sender.getName(), str(message))))
-
 
 

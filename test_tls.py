@@ -81,7 +81,7 @@ def main(argv):
     timeouts = lambda i: 2**i
 
     blocker = BlockingAgent('blocker', scheduler, 1000., 0.0009, queuing=True)
-    blocker.start()
+    #blocker.start()
 
     server = GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
     client = GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
