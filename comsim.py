@@ -229,33 +229,79 @@ class BlockingAgent(Agent):
 
     def __init__(self, name, scheduler, frequency, duration, **params):
         Agent.__init__(self, name, scheduler, **params)
-        self.frequency = frequency
-        self.duration = duration
         self.running = False
-        self.queuing = params.get('queuing', False)
         self.queue = 0
+        self.withhold = False
+
+        # Whether blocking request shall be piled up
+        self.queuing = params.get('queuing', False)
+
+        # The frequency of blocking requests in requests per second
+        self.frequency = frequency
+
+        # The duration of each blocking request in seconds
+        self.duration = duration
+
+        # The minimum separation time between blocking request in seconds
+        self.min_sep_time = params.get('min_sep_time', 0)
+
+        if (1. / self.frequency) <= (float(self.duration) + self.min_sep_time):
+            raise Exception('Blocking frequency higher than' + 
+                    ' duration and dead time allows')
 
     def start(self):
+        self.queue = 0
         self.running = True
         self.tick()
 
     def stop(self):
+        self.queue = 0
         self.running = False
 
     def tick(self):
+
+        if not self.running:
+            return
+
         if self.queuing:
+            # Pile-up blocking requests
             self.queue += 1
         else:
+            # Request blocking
             self.queue = 1
-        if self.running:
-            period = 1. / self.frequency
-            self.scheduler.registerEventRel(Callback(self.tick), period)
+
+        # Trigger arbitration of medium to ensure medium access
+        self.medium.arbitrate()
+
+        # register next blocking request
+        self.scheduler.registerEventRel(
+                Callback(self.tick), 1. / self.frequency)
 
     def offerMedium(self, medium):
-        if self.queue > 0:        
+
+        if not self.withhold and self.queue > 0:        
+
+            # Block the medium
             self.queue -= 1
-            self.log('Blocking medium for {0:>.3f}s'.format(self.duration))
             medium.block(self.duration)
+
+            if self.queue > 0:
+                queueStr = ' ({0} blocking requests left)'.format(self.queue)
+            else:
+                queueStr = ''
+            self.log('Blocking medium for {0:>.3f}s{1}'.format(
+                    self.duration, queueStr))
+
+            # Ensure minimum separation time
+            if self.min_sep_time:
+                self.withhold = True
+                def unWithhold(agent, medium):
+                    agent.withhold = False
+                    medium.arbitrate()
+                self.scheduler.registerEventRel(Callback(
+                        unWithhold, agent=self, medium=medium),
+                        float(self.duration) + self.min_sep_time)
+
             return True
         else:
             return False
@@ -715,6 +761,7 @@ class Medium(object):
         else:
             # >>> message got lost >>>
             self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
-                    ' by {0}').format(sender.getName(), str(message))))
+                    ' from {0} to {1}').format(sender.getName(),
+                            receiver.getName(), str(message))))
 
 
