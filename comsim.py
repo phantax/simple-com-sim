@@ -408,7 +408,9 @@ class GenericClientServerAgent(ProtocolAgent):
         if self.transmissions[flight] == 0:
             self.log('Transmitting flight #{0}'.format(flight + 1))
         else:
-            self.log('Retransmitting flight #{0}'.format(flight + 1))
+            self.log('Retransmitting flight #{0} (transmitted {1} ' \
+                    .format(flight + 1, self.transmissions[flight]) + 
+                            'time(s) before)')
 
         # transmit messages one by one
         for msg in self.flights[flight]:
