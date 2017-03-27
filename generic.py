@@ -6,37 +6,6 @@ import matplotlib.pyplot as plt
 from collections import OrderedDict
 
 
-class DTLSClient(GenericClientServer):
-
-
-    def __init__(self, name, scheduler, flightStructure, RetransmissionCriteria,*param,**kwparam):
-        GenericClientServer.__init__(self, name, scheduler,flightStructure,**kwparam)
-
-        self.HandShakeTime=0
-
-        self.Retransmission_Criteria=RetransmissionCriteria
-
-    def trigger(self):
-        self.currentFlight = 0
-        self.transmitFlight(self.currentFlight)
-
-    def checkFlightNumber(self, flight):
-        return (flight % 2) == 0
-
-
-
-class DTLSServer(GenericClientServer):
-
-    def __init__(self,name,scheduler,flightStructure,RetransmissionCriteria,*param,**kwparam):
-        GenericClientServer.__init__(self, name, scheduler,flightStructure,**kwparam)
-
-        self.RetransmissionFlag=False        
-        self.Retransmission_Criteria=RetransmissionCriteria
-
-    def checkFlightNumber(self, flight):
-        return (flight % 2) == 1
-
-
 class Logger(object):
 
     def log(self, header, text):
@@ -49,36 +18,30 @@ class Logger(object):
 
 def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
 
-    f11=FlightMessage('ClientHello',87)
+    flights = [
+        [
+            ProtocolMessage('ClientHello', 87)
+        ],
+        [
+            ProtocolMessage('ServerHello', 107),
+            ProtocolMessage('Certificate', 834),
+            ProtocolMessage('ServerKeyExchange', 165),
+            ProtocolMessage('CertificateRequest', 71),
+            ProtocolMessage('ServerHelloDone', 25)
+        ],
+        [
+            ProtocolMessage('Certificate', 834),
+            ProtocolMessage('ClientKeyExchange', 91),
+            ProtocolMessage('CertificateVerify', 97),
+            ProtocolMessage('ChangeCipherSpec', 13),
+            ProtocolMessage('Finished', 37)
+        ],
+        [
+            ProtocolMessage('ChangeCipherSpec', 13),
+            ProtocolMessage('Finished', 37)
+        ]
+    ]
 
-
-
-    f21=FlightMessage('ServerHello',107)
-    f22=FlightMessage('ServerCertificate',834)
-    f23=FlightMessage('ServerKeyExchange',165)
-    f24=FlightMessage('CertificateRequest',71)
-    f25=FlightMessage('ServerHelloDone',25)
-
-
-
-
-    f31=FlightMessage('ClientCertificate',834)
-    f32=FlightMessage('ClientKeyExchange',91)
-    f33=FlightMessage('CertificateVerify',97)
-    f34=FlightMessage('ChangeCipherSpec',13)
-    f35=FlightMessage('Finished',37)
-
-
-
-    f41=FlightMessage('ServerChangeCipherSpec',13)
-    f42=FlightMessage('ServerFinished',37)
-
-
-
-    Flight1=Flightx(f11)
-    Flight2=Flightx(f21,f22,f23,f24,f25)
-    Flight3=Flightx(f31,f32,f33,f34,f35)
-    Flight4=Flightx(f41,f42)
     
     while(noOfTimes):
         noOfTimes-=1
@@ -87,27 +50,28 @@ def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
 
         scheduler = Scheduler()
 
-        server=DTLSServer('server1',scheduler,Retransmit,Flight1,Flight2,Flight3,Flight4,logger=logger)
-        client=DTLSClient('client1',scheduler,Retransmit,Flight1,Flight2,Flight3,Flight4,logger=logger)
+        if Retransmit == 'exponential':
+            timeouts = lambda i: 2**i if i < 10 else None
+        elif Retransmit == 'linear':
+            timeouts = lambda i: 10*(i + 1) if i < 10 else None
+        else:
+            # No retransmission at all
+            timeouts = None
+
+        server=GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger)
+        client=GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger)
 
         medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, inter_msg_time=0.001, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
         client.trigger()
             
-        while not scheduler.empty():
-            scheduler.run()
-            if client.RetransmissionFlag | server.RetransmissionFlag :
-                print('Stopping Retransmission: Retransmission reached max limit (10)')
-                break
+        scheduler.run()
 
-
-
-
-        if client.HandShakeTime!=0:   #if hanshake was incomplete, don't append 0 in the list        
-            listOfTimes.append(client.HandShakeTime)
+        if client.doneAtTime != 0:   #if hanshake was incomplete, don't append 0 in the list        
+            listOfTimes.append(client.doneAtTime)
         
-        print 'Total amount of data exchanged : ',client.ClientDataCounter+server.ServerDataCounter
+        print 'Total amount of data exchanged : ',client.txCount + server.txCount
        
 
 
@@ -287,53 +251,16 @@ def plotHistogram(HandshakeTimesList):
 #____________________________________________________________________________________
 #
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def main(argv):
-#    HandshakeList=[]
+    HandshakeList=[]
 
-#    Handshake_HS1(100,HandshakeList,'linear',LossRate=0.1)
+    Handshake_HS1(1,HandshakeList,'linear',LossRate=0.1)
 
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
 #    plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=1)
 
 
-
-    logger = Logger()
-
-    scheduler = Scheduler()
-
-    server=DTLSServer('server1',scheduler,[[ProtocolMessage('A1',10),ProtocolMessage('A2',11)],[ProtocolMessage('B',20)],[ProtocolMessage('C',30)],[ProtocolMessage('D',40)]],'exponential',logger=logger)
-    client=DTLSClient('client1',scheduler,[[ProtocolMessage('A1',10),ProtocolMessage('A2',11)],[ProtocolMessage('B',20)],[ProtocolMessage('C',30)],[ProtocolMessage('D',40)]],'exponential',logger=logger)
-
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.9, inter_msg_time=0.001, logger=logger)
-    medium.registerAgent(server)
-    medium.registerAgent(client)
-    client.trigger()
-        
-    while not scheduler.empty():
-        scheduler.run()
-
-            
-
-
-
-
-
-    pass
 
 
 #
