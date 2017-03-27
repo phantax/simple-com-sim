@@ -110,17 +110,14 @@ class Scheduler(object):
         self.time = 0.
         self.queue = Queue.PriorityQueue()
 
-    def registerEventAbs(self, event, time=None):
-        # time is None means execute event now
-        if time is None:
-            time = self.time
+    def registerEventAbs(self, event, time, priority=0):
         if time < self.time:
             raise Exception('Cannot register event in past')
-        self.queue.put((time, event))
+        self.queue.put((time, priority, event))
         return time
 
-    def registerEventRel(self, event, time):
-        return self.registerEventAbs(event, self.time + time)
+    def registerEventRel(self, event, time, priority=0):
+        return self.registerEventAbs(event, self.time + time, priority)
 
     def getTime(self):
         return self.time
@@ -138,7 +135,7 @@ class Scheduler(object):
             return self.time
 
         # retrieve the next event from the queue
-        time, event = self.queue.get()
+        time, priority, event = self.queue.get()
         if time < self.time:
             raise Exception('Cannot handle event from past')
 
@@ -598,6 +595,9 @@ class GenericServerAgent(GenericClientServerAgent):
 
 class Medium(object):
 
+    priorityReceive = 0
+    priorityUnblock = 1
+
     def __init__(self, scheduler, **params):
         self.scheduler = scheduler
         self.agents = {}
@@ -683,8 +683,8 @@ class Medium(object):
             medium.arbitrate()
 
         # Use a callback to unblock the medium after <duration>
-        self.scheduler.registerEventRel(
-                Callback(unblock, medium=self), duration)
+        self.scheduler.registerEventRel(Callback(
+                unblock, medium=self), duration, Medium.priorityUnblock)                
 
     def isBlocked(self):
         return self.blocked
@@ -779,7 +779,8 @@ class Medium(object):
             else:
                 # register a callback for reception after <duration>
                 self.scheduler.registerEventRel(Callback(receiver.receive,
-                        message=message, sender=sender), duration)
+                        message=message, sender=sender), duration,
+                                Medium.priorityReceive)
         else:
             # >>> message got lost >>>
             self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
