@@ -73,12 +73,12 @@ def main(argv):
     logger = Logger()
     scheduler = Scheduler()
 
-    msg_loss_rate = 0
+    msg_loss_rate = 0.1
 
     medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=msg_loss_rate, inter_msg_time=0.001, logger=logger)
 
-    timeouts = None
-    #timeouts = lambda i: 2**i
+    #timeouts = None
+    timeouts = lambda i: 2**i
 
     blocker = BlockingAgent('blocker', scheduler, 1000., 0.0009, queuing=True)
     blocker.start()
@@ -95,8 +95,8 @@ def main(argv):
     scheduler.run()
 
 
-    server.printStatistics()
-    client.printStatistics()
+    #server.printStatistics()
+    #client.printStatistics()
 
 #
 # _____________________________________________________________________________
