@@ -248,7 +248,7 @@ class BlockingAgent(Agent):
 
         if (1. / self.frequency) <= (float(self.duration) + self.min_sep_time):
             raise Exception('Blocking frequency higher than' + 
-                    ' duration and dead time allows')
+                    ' duration and minimum separation time allows')
 
     def start(self):
         self.queue = 0
