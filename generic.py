@@ -319,13 +319,15 @@ def main(argv):
     server=DTLSServer('server1',scheduler,[[ProtocolMessage('A1',10),ProtocolMessage('A2',11)],[ProtocolMessage('B',20)],[ProtocolMessage('C',30)],[ProtocolMessage('D',40)]],'exponential',logger=logger)
     client=DTLSClient('client1',scheduler,[[ProtocolMessage('A1',10),ProtocolMessage('A2',11)],[ProtocolMessage('B',20)],[ProtocolMessage('C',30)],[ProtocolMessage('D',40)]],'exponential',logger=logger)
 
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.1, inter_msg_time=0.001, logger=logger)
+    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=0.9, inter_msg_time=0.001, logger=logger)
     medium.registerAgent(server)
     medium.registerAgent(client)
     client.trigger()
         
     while not scheduler.empty():
         scheduler.run()
+
+            
 
 
 

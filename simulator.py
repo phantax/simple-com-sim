@@ -393,7 +393,7 @@ def plotHistogram(HandshakeTimesList):
     if max(HandshakeTimesList)-min(HandshakeTimesList)>1000:
         plt.xscale('log')
 		
-    plt.hist(HandshakeTimesList,bins='auto',alpha=0.5,label='1')
+    plt.hist(HandshakeTimesList,bins=10,alpha=0.5,label='1')
     plt.title("Histogram")
     plt.xlabel("Handshaketime")
     plt.ylabel("Frequency")
@@ -611,13 +611,13 @@ def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
 
 
 def main(argv):
-    HandshakeList=[]
+#     HandshakeList=[]
 
-    Handshake_HS1(1,HandshakeList,'linear',LossRate=0.)
+#    Handshake_HS1(200,HandshakeList,'linear',LossRate=0.00001)
 
-    print HandshakeList
+#    print HandshakeList
 #    plotHistogram(HandshakeList)
-#    plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=1)
+    plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=1)
 
     pass
 
