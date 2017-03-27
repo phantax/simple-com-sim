@@ -590,8 +590,11 @@ class Medium(object):
 
         # No arbitration if medium is blocked
         if not self.blocked:
+            # Offer the medium to each agent one by one
+            # (using the list sorted by descending priority)
             for agent in self.sortedAgents:
                 if agent.offerMedium(self):
+                    # Stop once an agent has taken the medium
                     break
 
     def block(self, duration):
@@ -601,7 +604,7 @@ class Medium(object):
 
         # Cannot block a blocked medium
         if self.blocked:
-            raise Exception('Medium already blocked')
+            raise Exception('Cannot block medium: medium is already blocked')
         self.blocked = True
 
         def unblock(medium):
