@@ -124,10 +124,13 @@ class Scheduler(object):
     def getTime(self):
         return self.time
 
-    def empty(self):
+    def done(self):
         return self.queue.empty()
 
-    def run(self):
+    def runStep(self):
+        """
+        Run one single step
+        """
 
         if self.queue.empty():
             # there is no event to process => just do nothing
@@ -146,6 +149,10 @@ class Scheduler(object):
 
         # return the new current time
         return self.time
+
+    def run(self):
+        while not self.done():
+            self.runStep()
 
 
 class Message(object):
@@ -172,76 +179,45 @@ class ProtocolMessage(Message):
     def getLength(self):
         return self.length
 
+    def fragment(self, lenPayload, lenFixed):
+        
+        fragments = []
 
-class ProtocolAgent(object):
+        msgLen = self.getLength()
+        while msgLen > 0:
+            lenFrag = min(msgLen, lenPayload)
+            msgLen -= lenFrag
+            fragments.append(ProtocolMessage('{0}.f{1}'.format(
+                    self.getName(), len(fragments)), lenFrag + lenFixed))
+
+        return fragments
+
+
+class Agent(object):
 
     def __init__(self, name, scheduler, **params):
         self.name = name
         self.scheduler = scheduler
-        self.medium = None
         self.logger = params.get('logger', None)
-        self.txQueue = collections.deque()
-        self.txCount = 0
-        self.rxCount = 0
+        self.medium = None
+
+        medium = params.get('medium', None)
+        if medium:
+            medium.registerAgent(self)
 
     def getName(self):
         return self.name
-
-    def getTxCount(self):
-        return self.txCount
-
-    def getRxCount(self):
-        return self.rxCount
 
     def registerMedium(self, medium):
         if self.medium:
             raise Exception('Agent "{0}" already registered with medium'.format(self.name))
         self.medium = medium
 
-    # called by subclasses of ProtocolAgent
-    def transmit(self, message, receiver=None):
-        # receiver might be agent name or agent object instance
-        if not self.medium:
-            raise Exception('Agent "{0}" not registered with any medium'.format(self.name))
+    def offerMedium(self, medium):
+        return False
 
-        self.log('Info: {0} scheduling message {1}' \
-                .format(self.name, str(message)))
-
-        # add message to transmission queue
-        self.txQueue.append((message, receiver, self.scheduler.getTime()))
-
-        # detect message jam
-        if len(self.txQueue):
-            times = [m[2] for m in self.txQueue]
-            if (max(times) - min(times)) > 0.:
-                self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
-                        ' message jam for {0} (N = {1}, d = {2:>.3f}s)' \
-                                .format(self.name, len(self.txQueue), \
-                                        max(times) - min(times))))
-
-        self.medium.checkTxQueues()
-
-    # called by Medium class
     def receive(self, message, sender):
-        # track the number of bytes received
-        if isinstance(message, ProtocolMessage):
-            self.rxCount += message.getLength()
-        # sender is agent object instance
-        self.log(TextFormatter.makeBoldGreen(
-                '<-- received message {1} from {2}'.format(
-                        self.name, str(message), sender.getName())))
-
-    # called by Medium class
-    def retrieveMessage(self):
-        if not len(self.txQueue):
-            # no message in the transmission queue
-            return None, None
-        else:
-            message, receiver = self.txQueue.popleft()[:2]
-            # track the number of bytes sent
-            if isinstance(message, ProtocolMessage):
-                self.txCount += message.getLength()
-            return message, receiver
+        pass
 
     def log(self, text):
         if self.logger:        
@@ -249,53 +225,401 @@ class ProtocolAgent(object):
             self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
 
 
+class BlockingAgent(Agent):
+
+    def __init__(self, name, scheduler, frequency, duration, **params):
+        Agent.__init__(self, name, scheduler, **params)
+        self.frequency = frequency
+        self.duration = duration
+        self.running = False
+        self.queuing = params.get('queuing', False)
+        self.queue = 0
+
+    def start(self):
+        self.running = True
+        self.tick()
+
+    def stop(self):
+        self.running = False
+
+    def tick(self):
+        if self.queuing:
+            self.queue += 1
+        else:
+            self.queue = 1
+        if self.running:
+            period = 1. / self.frequency
+            self.scheduler.registerEventRel(Callback(self.tick), period)
+
+    def offerMedium(self, medium):
+        if self.queue > 0:        
+            self.queue -= 1
+            self.log('Blocking medium for {0:>.3f}s'.format(self.duration))
+            medium.block(self.duration)
+            return True
+        else:
+            return False
+
+
+class ProtocolAgent(Agent):
+
+    def __init__(self, name, scheduler, **params):
+        Agent.__init__(self, name, scheduler, **params)
+        self.txQueue = collections.deque()
+        self.txCount = 0
+        self.rxCount = 0
+
+    def getTxCount(self):
+        return self.txCount
+
+    def getRxCount(self):
+        return self.rxCount
+
+    def offerMedium(self, medium):
+
+        if len(self.txQueue) > 0:
+
+            # retrieve next message (and corresponding receiver) from TX queue
+            message, receiver = self.txQueue.popleft()[:2]
+
+            # track the number of bytes transmitted
+            if isinstance(message, ProtocolMessage):
+                self.txCount += message.getLength()
+
+            # initiate message transmission
+            medium.initiateMsgTX(message, self, receiver)
+
+            # We took access to the medium
+            return True
+
+        else:
+            # Don't need access to the medium
+            return False
+
+    # called by subclasses of ProtocolAgent
+    def scheduleMsgTX(self, message, receiver=None):
+
+        self.log('Scheduling message {0} for transmission'.format(str(message)))                
+
+        # add message to transmission queue
+        self.txQueue.append((message, receiver, self.scheduler.getTime()))
+
+        # detect message congestion
+        if len(self.txQueue):
+            times = [m[2] for m in self.txQueue]
+            if (max(times) - min(times)) > 0.:
+                self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
+                        ' message congestion for {0} (N = {1}, d = {2:>.3f}s)' \
+                                .format(self.name, len(self.txQueue),
+                                        max(times) - min(times))))
+
+        # trigger medium access arbitration
+        if self.medium is not None:
+            self.medium.arbitrate()
+        else:
+            self.log('Warning: No medium available')
+
+    # called by Medium class
+    def receive(self, message, sender):
+
+        # track the number of bytes received
+        if isinstance(message, ProtocolMessage):
+            self.rxCount += message.getLength()
+
+        # sender is agent object instance
+        self.log(TextFormatter.makeBoldGreen(
+                '<-- received message {1} from {2}'.format(
+                        self.name, str(message), sender.getName())))
+
+
+class GenericClientServerAgent(ProtocolAgent):
+
+    def __init__(self, name, scheduler, flightStructure, **kwparam):
+
+        ProtocolAgent.__init__(self, name, scheduler, **kwparam)
+
+        # the flight structure defining the communication sequence
+        self.flights = flightStructure
+
+        # the current flight
+        self.currentFlight = 0
+
+        # not yet done with the communication sequence
+        self.done = False
+
+        # the number of transmissions for each flight (one entry per flight)
+        self.transmissions = [0] * len(flightStructure)
+
+        # keep track of the number of times messages have been received
+        self.receptions = [[0] * len(flight) for flight in flightStructure]
+
+        # keep track of the time when a message has been received first
+        self.first_receptions = [[None] * len(flight) for flight in flightStructure]
+
+        # Flag for stopping Retransmissions
+        
+        self.Retransmission_flag=False
+        # additionally keep track of the messages received in the second-to-last flight
+        if len(flightStructure) > 1:
+            # >>> there is more than one flight
+            self.receptions_stl_flight = [False] * len(flightStructure[-2])
+
+        # the retransmission timeout function
+        self.timeouts = kwparam.get('timeouts', None)
+
+        # communictation sequence complete callback
+        self.onComplete = kwparam.get('onComplete', None)
+
+    def getTimeout(self, index):
+        if self.timeouts:
+            return self.timeouts(index)
+        else:
+            # No further retransmissions
+            return None
+
+    def printStatistics(self):
+
+        for i in range(len(self.flights)):
+            print('\nFlight #{0}:'.format(i + 1))
+            if not self.isTXFlight(i):
+                for j in range(len(self.flights[i])):
+                    print('--> {0}:'.format(self.flights[i][j].getName()))
+                    print('  - received: {0} time(s)'.format(
+                            self.receptions[i][j]))
+                    print('  - first reception at: {0:>.3f}s'.format(
+                            self.first_receptions[i][j]))
+            else:
+                for j in range(len(self.flights[i])):
+                    print('--> {0}:'.format(self.flights[i][j].getName()))
+                    print('  - sent: {0} time(s)'.format(
+                            self.transmissions[i]))
+
+    def gotoNextFlight(self):
+        # move on to the next flight if this is not the last flight
+        if (self.currentFlight + 1) < len(self.flights):
+            self.currentFlight += 1
+            self.log('Now at flight #{0}'.format(self.currentFlight + 1))
+
+    def transmitFlight(self, flight):
+
+        if not self.isTXFlight(flight):
+            raise Exception('Trying to transmit the wrong flight!')
+
+        if self.transmissions[flight] == 0:
+            self.log('Transmitting flight #{0}'.format(flight + 1))
+        else:
+            self.log('Retransmitting flight #{0}'.format(flight + 1))
+
+        # transmit messages one by one
+        for msg in self.flights[flight]:
+            self.scheduleMsgTX(copy.deepcopy(msg))
+
+        # don't trigger the retransmission of the last flight using timeout
+        if (flight + 1) < len(self.flights):
+            timeout = self.getTimeout(self.transmissions[flight])
+            if timeout is not None:
+                self.scheduler.registerEventRel(Callback(
+                        self.checkFlight, flight=flight), timeout)
+
+        # remember that this flight has been (re)transmitted 
+        self.transmissions[flight] += 1
+       
+        # clear reception tracking of second-to-last flight
+        if len(self.flights) > 1 and (flight + 1) == len(self.flights):
+            self.receptions_stl_flight = [False] * len(self.flights[-2])
+
+        # is this flight transmitted for the first time ...
+        # equivalently: if self.transmissions[flight] == 0
+        if flight == self.currentFlight:
+            # >>> YES >>>
+            # move on to the next flight if this is not the last flight
+            self.gotoNextFlight()
+
+    def checkFlight(self, flight):
+        # the second-to-last flight has to be treated differently
+        if len(self.flights) > 1 and (flight + 2) == len(self.flights):
+            # retransmit if at least one message is missing
+            doRetransmit = min(self.receptions[flight + 1]) == 0
+        else:
+            # retransmit if every message is missing
+            doRetransmit = max(self.receptions[flight + 1]) == 0
+        if doRetransmit:
+            # retransmit
+            self.transmitFlight(flight)
+
+    def receive(self, message, sender):
+        ProtocolAgent.receive(self, message, sender)
+
+        expectedFlight = self.currentFlight
+        if (self.currentFlight  + 1) == len(self.flights) and self.isTXFlight(self.currentFlight):
+            # >>> we are handling the last flight and are supposed to potentially retransmit it >>>
+            expectedFlight -= 1
+
+        # the list of expected messages in the current flight
+        expectedMsgs = [msg.getName() for msg in self.flights[expectedFlight]]
+
+        # detect unexpected messages
+        if message.getName() not in expectedMsgs:
+
+            # >>> We received an unexpected message
+            # (probably from a previous flight) >>>
+            self.log(('Received unexpected message "{0}". '
+                    + 'Expecting one of {1}').format(message.getName(), ', ' \
+                            .join(['<{0}>'. format(msg) for msg in expectedMsgs])))
+
+            # Just ignore it
+            return
+
+        # remember that (and when) the message has been received once (more)
+        msgIndex = expectedMsgs.index(message.getName())
+        self.receptions[expectedFlight][msgIndex] += 1
+        if self.first_receptions[expectedFlight][msgIndex] is None:
+            self.first_receptions[expectedFlight][msgIndex] = self.scheduler.getTime()
+
+        # keep track of receptions of second-to-last flight
+        if len(self.flights) > 1 and (expectedFlight + 2) == len(self.flights):
+            self.receptions_stl_flight[msgIndex] = True
+
+        if (self.currentFlight  + 1) < len(self.flights):
+            # >>> we are NOT handling the last flight >>>
+            # check whether flight has been received completely ...
+            if min(self.receptions[self.currentFlight]) > 0:
+                # >>> YES >>>
+                self.log('Flight #{0} has been received completely' \
+                        .format(self.currentFlight + 1))
+                # move on to the next flight
+                self.gotoNextFlight()
+                # transmit next flight
+                self.transmitFlight(self.currentFlight)
+            else:
+                # >>> NO >>>
+                missing = ', '.join(['<{0}>'.format(expectedMsgs[i]) \
+                        for i in range(len(expectedMsgs)) \
+                                if self.receptions[self.currentFlight][i] == 0])
+                self.log('Messages still missing from flight #{0}: {1}' \
+                        .format(self.currentFlight + 1, missing))
+
+        elif self.isTXFlight(self.currentFlight):
+            # >>> we received a retransmission of the second-to-last flight
+            # retransmit the last flight if we re-received the second-to-last flight completely
+            if len(self.flights) > 1 and self.receptions_stl_flight.count(False) == 0:
+                self.log(('The second-to-last flight (flight #{0}) has ' +
+                        'been re-received completely').format(expectedFlight + 1))
+                # do retransmission
+                self.transmitFlight(self.currentFlight)
+
+        # here: self.currentFlight == expectedFlight
+        elif min(self.receptions[self.currentFlight]) > 0 and not self.done:
+            # >>> we received the last flight completely
+            self.log('Communication sequence completed at time {0:>.3f}s' \
+                    .format(self.scheduler.getTime()))
+            self.done = True
+            self.doneAtTime = self.scheduler.getTime()
+            if self.onComplete:
+                self.onComplete()
+
+
+class GenericClientAgent(GenericClientServerAgent):
+
+
+    def __init__(self, name, scheduler, flightStructure, **kwparam):
+        GenericClientServerAgent.__init__(
+                self, name, scheduler, flightStructure, **kwparam)
+
+    def trigger(self):
+        self.currentFlight = 0
+        self.transmitFlight(self.currentFlight)
+
+    def isTXFlight(self, flight):
+        # Clients transmit even flight numbers (0, 2, ...)
+        return (flight % 2) == 0
+
+
+class GenericServerAgent(GenericClientServerAgent):
+
+    def __init__(self, name, scheduler, flightStructure, **kwparam):
+        GenericClientServerAgent.__init__(
+                self, name, scheduler, flightStructure, **kwparam)
+
+    def isTXFlight(self, flight):
+        # Server transmit odd flight numbers (1, 3, ...)
+        return (flight % 2) == 1
+
+
 class Medium(object):
 
     def __init__(self, scheduler, **params):
         self.scheduler = scheduler
         self.agents = {}
-        self.busy = False
-        self.data_rate = params.get('data_rate', None)    # None means 'unlimited'
+        self.sortedAgents = []
+        self.blocked = False
+        self.name = params.get('name', 'Medium')
+
+        # the data rate in bytes/second, None means 'unlimited'
+        self.data_rate = params.get('data_rate', None)
+
         self.msg_slot_distance = params.get('msg_slot_distance', None)      # None means 'no slotting'
         self.msg_loss_rate = params.get('msg_loss_rate', 0.)
         self.bit_loss_rate = params.get('bit_loss_rate', 0.)
         self.inter_msg_time = params.get('inter_msg_time', 0.)
         self.logger = params.get('logger', None)
 
-    def registerAgent(self, agent):
+    def getName(self):
+        return self.name
+
+    def registerAgent(self, agent, priority=None):
         if agent.getName() in self.agents:
             raise Exception('Agent "{0}" already registered'.format(agent.getName()))
         agent.registerMedium(self)
-        self.agents[agent.getName()] = agent
+        self.agents[agent.getName()] = agent, priority
+        self.sortAgents()
 
-    def checkTxQueues(self):
+    def sortAgents(self):
+
+        # sort agents with assigned priority
+        agents = [(p, a) for a, p in self.agents.values() if p is not None]
+        sortedAgents = map(lambda (p, a): a, sorted(agents))
+
+        # append agents without assigned priority
+        sortedAgents += [a for a, p in self.agents.values() if p is None]
+
+        self.sortedAgents = sortedAgents
+
+    def arbitrate(self):
         """
         Trigger the medium to check for pending messages
         in transmission queues of protocol agents
         """
-        # don't need to do anything if medium is busy
-        if not self.isBusy():
-            for agent in self.agents.values():
-                message, receiver = agent.retrieveMessage()
-                if message is not None:
+
+        # No arbitration if medium is blocked
+        if not self.blocked:
+            # Offer the medium to each agent one by one
+            # (using the list sorted by descending priority)
+            for agent in self.sortedAgents:
+                if agent.offerMedium(self):
+                    # Stop once an agent has taken the medium
                     break
-            if message is not None:                
-                self.prepare(message, agent, receiver)
 
-    def setBusy(self, duration):
-        if self.busy:
-            raise Exception('Medium already busy')
-        self.busy = True
+    def block(self, duration):
+        """
+        Block the medium for a certain time given by <duration>
+        """
 
-        def transmissionDone(medium):
-            medium.busy = False
-            medium.checkTxQueues()
+        # Cannot block a blocked medium
+        if self.blocked:
+            raise Exception('Cannot block medium: medium is already blocked')
+        self.blocked = True
 
-        self.scheduler.registerEventRel(Callback(
-                transmissionDone, medium=self), duration + self.inter_msg_time)
+        def unblock(medium):
+            medium.blocked = False
+            medium.arbitrate()
 
-    def isBusy(self):
-        return self.busy
+        # Use a callback to unblock the medium after <duration>
+        self.scheduler.registerEventRel(
+                Callback(unblock, medium=self), duration)
+
+    def isBlocked(self):
+        return self.blocked
 
     def getMsgLossProp(self, message):
         """
@@ -315,9 +639,9 @@ class Medium(object):
     def log(self, text):
         if self.logger:        
             header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-            self.logger.log(header, text)
+            self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
 
-    def prepare(self, message, sender, receiver=None):
+    def initiateMsgTX(self, message, sender, receiver=None):
 
         if self.msg_slot_distance is not None:
             # determine time to next message slot
@@ -326,192 +650,69 @@ class Medium(object):
         else:
             timeToNextSlot = 0.
 
-        # There is a finite message data rate only for ProtocolMessages
-        if self.data_rate is None or not isinstance(message, ProtocolMessage):
-            duration = 0.
-            timeToNextSlot = 0.
+        # Media constraints only apply to ProtocolMessages
+        if not isinstance(message, ProtocolMessage):
+
+            self.doMsgTX(message, sender, receiver)
+
         else:
+
             # duration of the transmission given by data_rate
-            duration = message.getLength() / self.data_rate
-            self.setBusy(timeToNextSlot + duration)
+            if self.data_rate is None:
+                duration = 0.
+            else:
+                duration = float(message.getLength()) / float(self.data_rate)
 
-        # ... and register a callback to send message at the next slot
-        self.scheduler.registerEventRel(Callback(self.send,
-                message=message, sender=sender, receiver=receiver, \
-                duration=duration), timeToNextSlot)
+            # block the medium
+            self.block(timeToNextSlot + duration + self.inter_msg_time)
 
-    def send(self, message, sender, receiver, duration):
+            # ... and register a callback to send message at the next slot
+            self.scheduler.registerEventRel(Callback(self.doMsgTX,
+                    message=message, sender=sender, receiver=receiver,
+                    duration=duration), timeToNextSlot)
+
+    def doMsgTX(self, message, sender, receiver, duration=None):
 
         # make sender an agent object instance
         if isinstance(sender, str):
-            sender = self.agents[sender]
+            sender, priority = self.agents[sender]
 
         # There is a message loss probability different
         # from zero only for ProtocolMessages
         if isinstance(message, ProtocolMessage):
             loss_prop = self.getMsgLossProp(message)
         else:
-            loss_prop = 0.
+            loss_prop = None
 
-        self.log('{0}: {1}'.format(sender.getName(), TextFormatter.makeBoldBlue(\
-                '--> sending message {0} (p_loss = {1})'.format(
-                        str(message), loss_prop))))
+        sender.log(TextFormatter.makeBoldBlue(('--> sending message {0} ' +
+                '(p_loss = {1})').format(str(message), loss_prop)))
 
         if not receiver:
             # this is a broadcast (let sender not receive its own message)
-            for agent in filter(lambda a: a != sender, self.agents.values()):
-                self.dispatch(message, sender, agent, loss_prop, duration)
+            for agent, priority in filter(
+                    lambda (a, p): a != sender, self.agents.values()):
+                self.dispatchMsg(message, sender, agent, loss_prop, duration)
         else:
             # make receiver an object instance
             if isinstance(receiver, str):
-                receiver = self.agents[receiver]
-            self.dispatch(message, sender, receiver, loss_prop, duration)
+                receiver, priority = self.agents[receiver]
+            self.dispatchMsg(message, sender, receiver, loss_prop, duration)
 
-    def dispatch(self, message, sender, receiver, loss_prop, duration):
-        if random.random() >= loss_prop:
-            # message did not get lost => register a callback for reception
-            self.scheduler.registerEventRel(Callback(receiver.receive, \
-                    message=message, sender=sender), duration)
-        else:
-            # message got lost => log it
-            self.log(TextFormatter.makeBoldRed(('Info: Lost message {1} sent' + \
-                    ' by {0}').format(sender.getName(), str(message))))
+    def dispatchMsg(self, message, sender, receiver, loss_prop, duration):
 
-
-class GenericClientServer(ProtocolAgent):
-
-    def __init__(self, name, scheduler, flightStructure, *param, **kwparam):
-
-        ProtocolAgent.__init__(self, name, scheduler, **kwparam)
-
-        # the flight structure defining the communication sequence
-        self.flights = flightStructure
-
-        # the current flight
-        self.currentFlight = 0
-
-        # the number of transmissions for each flight (one entry per flight)
-        self.transmissions = [0] * len(flightStructure)
-
-        # keep track of the messages received
-        self.receptions = [[0 for msg in flight] for flight in flightStructure]
-
-        # Flag for stopping Retransmissions
-        
-        self.Retransmission_flag=False
-        # additionally keep track of the messages received in the second-to-last flight
-        if len(flightStructure) > 1:
-            # >>> there is more than one flight
-            self.receptions_stl_flight = [False] * len(flightStructure[-2])
-
-        # the retransmission timeout generators
-        timeoutGenerator = (2**i for i in itertools.count())
-        self.timeoutGenerator = itertools.islice(timeoutGenerator,10)
-        self.timeouts = []
-
-    def getTimeout(self, previous_retransmissions):
-        while previous_retransmissions >= len(self.timeouts):
-            try:
-                self.timeouts.append(self.timeoutGenerator.next())
-            except StopIteration:
-                break
-        if previous_retransmissions < len(self.timeouts):
-            return self.timeouts[previous_retransmissions]
-        else:
-            # No further retransmissions
-            return None
-
-    def transmitFlight(self, flight):
-
-        if not self.checkFlightNumber(flight):
-            raise Exception('Trying to transmit the wrong flight!')
-
-        if self.transmissions[flight] == 0:
-            self.log('Transmitting flight #{0}'.format(flight + 1))
-        else:
-            self.log('Retransmitting flight #{0}'.format(flight + 1))
-
-        # is this flight transmitted for the first time ...
-        # equivalently: if flight == self.currentFlight
-        if self.transmissions[flight] == 0:
-            # >>> YES >>>
-            # move on to the next flight if this is not the last flight
-            if (flight + 1) < len(self.flights):
-                self.currentFlight += 1 
-
-        # transmit messages one by one
-        for msg in self.flights[flight]:
-            self.transmit(copy.deepcopy(msg))
-
-        # don't trigger the retransmission of the last flight using timeout
-        if (flight + 1) < len(self.flights):
-            timeout = self.getTimeout(self.transmissions[flight])
-            if timeout is not None:
-                self.scheduler.registerEventRel(Callback(self.checkFlight, flight=flight), timeout)
-            elif timeout is None:
-                self.Retransmission_flag=True
-        # remember that this flight has been (re)transmitted 
-        self.transmissions[flight] += 1
-       
-        # clear reception tracking of second-to-last flight
-        if len(self.flights) > 1 and (flight + 1) == len(self.flights):
-            self.receptions_stl_flight = [False] * len(self.flights[-2])
-
-    def checkFlight(self, flight):
-        if max(self.receptions[flight + 1]) == 0:
-            # we didn't received any message of the next flight 
-            # => need to retransmit
-            self.transmitFlight(flight)
-
-    def receive(self, message, sender):
-        ProtocolAgent.receive(self, message, sender)
-
-        expectedFlight = self.currentFlight
-        if (self.currentFlight  + 1) == len(self.flights) and self.checkFlightNumber(self.currentFlight):
-            # >>> we are handling the last flight and are supposed to potentially retransmit it >>>
-            expectedFlight -= 1
-
-        # the list of expected messages in the current flight
-        expectedMsgs = [msg.getName() for msg in self.flights[expectedFlight]]
-
-        # detect unexpected messages
-        if message.getName() not in expectedMsgs:
-            self.log('Received unexpected message "{0}". Expecting one of {1}'\
-                    .format(message.getName(), ', '.join(expectedMsgs)))
-        else:
-
-            # remember that the message has been received once (more)
-            self.receptions[expectedFlight][expectedMsgs.index(message.getName())] += 1
-        
-
-            # keep track of receptions of second-to-last flight
-            if len(self.flights) > 1 and (expectedFlight + 2) == len(self.flights):
-                self.receptions_stl_flight[expectedMsgs.index(message.getName())] = True
-
-            if (self.currentFlight  + 1) < len(self.flights):
-                # >>> we are NOT handling the last flight >>>
-                # check whether flight has been received completely ...
-                if min(self.receptions[self.currentFlight]) > 0:
-                    # >>> YES >>>
-                    self.log('Flight {0} has been received completely'.format(self.currentFlight + 1))
-                    # move on to the next flight
-                    self.currentFlight += 1
-                    # transmit next flight
-                    self.transmitFlight(self.currentFlight)
-                else:
-                    # >>> NO >>>
-                    missing = ', '.join([expectedMsgs[i] for i in range(len(expectedMsgs)) \
-                            if self.receptions[self.currentFlight][i] == 0])
-                    self.log('Still missing from flight {0}: {1}'.format(self.currentFlight + 1, missing))
-            elif self.checkFlightNumber(self.currentFlight):
-                # >>> we received a retransmission of the second-to-last flight
-                # retransmit the last flight if we re-received the second-to-last flight completely
-                if len(self.flights) > 1 and self.receptions_stl_flight.count(False) == 0:
-                    self.transmitFlight(self.currentFlight)
-                    self.log('The last flight (Flight #{0}) has been re-received completely'.format(expectedFlight + 1))
+        # handle random message loss according to loss_prop
+        if loss_prop is None or random.random() >= loss_prop:
+            # >>> message did not get lost >>>
+            if duration is None:
+                # immediate reception
+                receiver.receive(message, sender)
             else:
-                # >>> we received the last flight
-                self.log('Communication sequence completed at time {0}'.format(self.scheduler.getTime()))
-                self.HandShakeTime = self.scheduler.getTime()
+                # register a callback for reception after <duration>
+                self.scheduler.registerEventRel(Callback(receiver.receive,
+                        message=message, sender=sender), duration)
+        else:
+            # >>> message got lost >>>
+            self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
+                    ' by {0}').format(sender.getName(), str(message))))
 
 
