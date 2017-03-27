@@ -117,9 +117,10 @@ class Scheduler(object):
         if time < self.time:
             raise Exception('Cannot register event in past')
         self.queue.put((time, event))
+        return time
 
     def registerEventRel(self, event, time):
-        self.registerEventAbs(event, self.time + time)
+        return self.registerEventAbs(event, self.time + time)
 
     def getTime(self):
         return self.time
@@ -274,7 +275,7 @@ class BlockingAgent(Agent):
         self.medium.arbitrate()
 
         # register next blocking request
-        self.scheduler.registerEventRel(
+        nextTick = self.scheduler.registerEventRel(
                 Callback(self.tick), 1. / self.frequency)
 
     def offerMedium(self, medium):
@@ -283,13 +284,13 @@ class BlockingAgent(Agent):
 
             # Block the medium
             self.queue -= 1
-            medium.block(self.duration)
+            medium.blockMedium(self, self.duration)
 
             if self.queue > 0:
                 queueStr = ' ({0} blocking requests left)'.format(self.queue)
             else:
                 queueStr = ''
-            self.log('Blocking medium for {0:>.3f}s{1}'.format(
+            self.log('Blocking medium for {0:f}s{1}'.format(
                     self.duration, queueStr))
 
             # Ensure minimum separation time
@@ -339,6 +340,7 @@ class ProtocolAgent(Agent):
             return True
 
         else:
+
             # Don't need access to the medium
             return False
 
@@ -601,6 +603,8 @@ class Medium(object):
         self.agents = {}
         self.sortedAgents = []
         self.blocked = False
+        self.usage = {}
+
         self.name = params.get('name', 'Medium')
 
         # the data rate in bytes/second, None means 'unlimited'
@@ -648,6 +652,22 @@ class Medium(object):
                     # Stop once an agent has taken the medium
                     break
 
+    def updateUsage(self, agent, duration):
+        self.usage[agent.getName()] = float(duration) + \
+                self.usage.get(agent.getName(), 0.)
+
+    def getUsage(self, agent=None):
+        if agent is None:
+            return self.usage
+        elif isinstance(agent, str):
+            return self.usage.get(agent, 0.)
+        elif isinstance(agent, Agent):
+            return self.usage.get(agent.getName(), 0.)
+
+    def blockMedium(self, agent, duration):
+        self.updateUsage(agent, duration)
+        self.block(duration)
+
     def block(self, duration):
         """
         Block the medium for a certain time given by <duration>
@@ -691,6 +711,10 @@ class Medium(object):
 
     def initiateMsgTX(self, message, sender, receiver=None):
 
+        # make sender an agent object instance
+        if isinstance(sender, str):
+            sender, p_sender = self.agents[sender]
+
         if self.msg_slot_distance is not None:
             # determine time to next message slot
             frac, whole = math.modf(self.scheduler.getTime() / self.msg_slot_distance)
@@ -714,16 +738,14 @@ class Medium(object):
             # block the medium
             self.block(timeToNextSlot + duration + self.inter_msg_time)
 
+            self.updateUsage(sender, duration)
+
             # ... and register a callback to send message at the next slot
             self.scheduler.registerEventRel(Callback(self.doMsgTX,
                     message=message, sender=sender, receiver=receiver,
                     duration=duration), timeToNextSlot)
 
     def doMsgTX(self, message, sender, receiver, duration=None):
-
-        # make sender an agent object instance
-        if isinstance(sender, str):
-            sender, priority = self.agents[sender]
 
         # There is a message loss probability different
         # from zero only for ProtocolMessages
@@ -737,7 +759,7 @@ class Medium(object):
 
         if not receiver:
             # this is a broadcast (let sender not receive its own message)
-            for agent, priority in filter(
+            for agent, p_receiver in filter(
                     lambda (a, p): a != sender, self.agents.values()):
                 self.dispatchMsg(message, sender, agent, loss_prop, duration)
         else:
