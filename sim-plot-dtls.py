@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import sys
 from comsim import *
 import math
@@ -16,31 +18,7 @@ class Logger(object):
 
 
 
-def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
-
-    flights = [
-        [
-            ProtocolMessage('ClientHello', 87)
-        ],
-        [
-            ProtocolMessage('ServerHello', 107),
-            ProtocolMessage('Certificate', 834),
-            ProtocolMessage('ServerKeyExchange', 165),
-            ProtocolMessage('CertificateRequest', 71),
-            ProtocolMessage('ServerHelloDone', 25)
-        ],
-        [
-            ProtocolMessage('Certificate', 834),
-            ProtocolMessage('ClientKeyExchange', 91),
-            ProtocolMessage('CertificateVerify', 97),
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
-        ],
-        [
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
-        ]
-    ]
+def Handshake(flights,noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
 
     
     while(noOfTimes):
@@ -51,7 +29,7 @@ def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
         scheduler = Scheduler()
 
         if Retransmit == 'exponential':
-            timeouts = lambda i: 2**i if i < 10 else None
+            timeouts = lambda i: 10*2**i if i < 10 else None
         elif Retransmit == 'linear':
             timeouts = lambda i: 10*(i + 1) if i < 10 else None
         else:
@@ -68,8 +46,15 @@ def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
             
         scheduler.run()
 
-        if client.doneAtTime != 0:   #if hanshake was incomplete, don't append 0 in the list        
-            listOfTimes.append(client.doneAtTime)
+        # Last flight can be received at either Client or Server side 
+        if len(flights)%2==0:
+                handshaketime=client.doneAtTime
+        else:
+                handshaketime=server.doneAtTime
+            
+
+        if handshaketime != 0:   #if hanshake was incomplete, don't append 0 in the list        
+            listOfTimes.append(handshaketime)
         
         print 'Total amount of data exchanged : ',client.txCount + server.txCount
        
@@ -86,35 +71,31 @@ def Handshake_HS1(noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
 
 
 
-def plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=0):
+def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
+
+
+    Loss_Rate=0
+    mean_list=[]    
+    var_list=[]
+    std_list=[]
+    median_list=[]
+    
+    Loss_Rate_list=[]
+
+    while Loss_Rate<0.7:
+        Loss_Rate+=0.1
+        Loss_Rate_list.append(Loss_Rate)
+        tmp_list=[]
+        Handshake(flights,100,tmp_list,Retransmit='exponential',LossRate=Loss_Rate)
+
+        if len(tmp_list)>0:
+            mean_list.append(np.mean(tmp_list))
+            var_list.append(np.var(tmp_list))
+            std_list.append(np.std(tmp_list))
+            median_list.append(np.median(tmp_list))
+
 
     if Comparison==0:
-        Loss_Rate=0
-        mean_list=[]    
-        var_list=[]
-        std_list=[]
-        median_list=[]
-        
-        Loss_Rate_list=[]
-
-        while Loss_Rate<0.7:
-            Loss_Rate+=0.01
-            Loss_Rate_list.append(Loss_Rate)
-            tmp_list=[]
-            Handshake_HS1(100,tmp_list,LossRate=Loss_Rate)
-
-            if len(tmp_list)>0:
-                mean_list.append(np.mean(tmp_list))
-                var_list.append(np.var(tmp_list))
-                std_list.append(np.std(tmp_list))
-                median_list.append(np.median(tmp_list))
-
-        
-    #    print 'mean: ',mean_list
-    #    print 'var:  ',var_list
-    #    print 'std:  ',std_list
-    #    print 'med:  ',median_list
-
         plt.figure(1)
         plt.xlabel('Loss Rate')
         plt.ylabel('Mean')
@@ -147,81 +128,53 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=0):
 
     elif Comparison==1:
         Loss_Rate=0
-        mean_list_exp=[]
-        mean_list_lin=[]    
-        var_list_exp=[]
+        mean_list_lin=[]   
         var_list_lin=[]
-        std_list_exp=[]
         std_list_lin=[]
-        median_list_exp=[]
         median_list_lin=[]
         
-        Loss_Rate_list=[]
 
         while Loss_Rate<0.7:
-            Loss_Rate+=0.05
-            Loss_Rate_list.append(Loss_Rate)
-            tmp_list_exp=[]
+            Loss_Rate+=0.1
             tmp_list_lin=[]
 
-            Handshake_HS1(100,tmp_list_exp,Retransmit='exponential',LossRate=Loss_Rate)
-            Handshake_HS1(100,tmp_list_lin,Retransmit='linear',LossRate=Loss_Rate)
-            if len(tmp_list_exp)>0:
-                mean_list_exp.append(np.mean(tmp_list_exp))
-                var_list_exp.append(np.var(tmp_list_exp))
-                std_list_exp.append(np.std(tmp_list_exp))
-                median_list_exp.append(np.median(tmp_list_exp))
-            
+            Handshake(flights,100,tmp_list_lin,Retransmit='linear',LossRate=Loss_Rate)
             if len(tmp_list_lin)>0:
                 mean_list_lin.append(np.mean(tmp_list_lin))
                 var_list_lin.append(np.var(tmp_list_lin))
                 std_list_lin.append(np.std(tmp_list_lin))
                 median_list_lin.append(np.median(tmp_list_lin))
-
-
-
-
-
-        
-#    print 'mean exp: ',len(mean_list_exp)
-#    print 'mean lin: ',len(mean_list_lin)
-#    print 'Loss rate: ',len(Loss_Rate_list)
-    #    print 'var:  ',var_list
-    #    print 'std:  ',std_list
-    #    print 'med:  ',median_list
-
-
+            
 
         plt.figure(1)
         plt.xlabel('Loss Rate')
         plt.ylabel('Mean')
         plt.title('Loss Rate v/s Mean Handshake Time')
-        plt.plot(Loss_Rate_list,mean_list_exp,'r',Loss_Rate_list,mean_list_lin,'b')
+        plt.plot(Loss_Rate_list,mean_list,'r',Loss_Rate_list,mean_list_lin,'b')
 
 
         plt.figure(2)
         plt.xlabel('Loss Rate')
         plt.ylabel('Variance')
         plt.title('Loss Rate v/s Variance of Handshake Time')
-        plt.plot(Loss_Rate_list,var_list_exp,'r',Loss_Rate_list,var_list_lin,'b')
+        plt.plot(Loss_Rate_list,var_list,'r',Loss_Rate_list,var_list_lin,'b')
 
 
         plt.figure(3)
         plt.xlabel('Loss Rate')
         plt.ylabel('Std')
         plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
-        plt.plot(Loss_Rate_list,std_list_exp,'r',Loss_Rate_list,std_list_lin,'b')
+        plt.plot(Loss_Rate_list,std_list,'r',Loss_Rate_list,std_list_lin,'b')
 
 
         plt.figure(4)
         plt.xlabel('Loss Rate')
         plt.ylabel('Median')
         plt.title('Loss Rate v/s Median of Handshake Time')
-        plt.plot(Loss_Rate_list,median_list_exp,'r',Loss_Rate_list,median_list_lin,'b')
+        plt.plot(Loss_Rate_list,median_list,'r',Loss_Rate_list,median_list_lin,'b')
 
 
         plt.show()
-
 
 
 
@@ -252,13 +205,38 @@ def plotHistogram(HandshakeTimesList):
 #
 
 def main(argv):
-    HandshakeList=[]
+    flights = [
+        [
+            ProtocolMessage('ClientHello', 87)
+        ],
+        [
+            ProtocolMessage('ServerHello', 107),
+            ProtocolMessage('Certificate', 834),
+            ProtocolMessage('ServerKeyExchange', 165),
+            ProtocolMessage('CertificateRequest', 71),
+            ProtocolMessage('ServerHelloDone', 25)
+        ],
+        [
+            ProtocolMessage('Certificate', 834),
+            ProtocolMessage('ClientKeyExchange', 91),
+            ProtocolMessage('CertificateVerify', 97),
+            ProtocolMessage('ChangeCipherSpec', 13),
+            ProtocolMessage('Finished', 37)
+        ],
+#        [
+#            ProtocolMessage('ChangeCipherSpec', 13),
+#            ProtocolMessage('Finished', 37)
+#        ]
+    ]
 
-    Handshake_HS1(1,HandshakeList,'linear',LossRate=0.1)
+
+#    HandshakeList=[]
+
+#    Handshake_HS1(flights,1,HandshakeList,'linear',LossRate=0)
 
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
-#    plot_Mean_Variance_Median_Std_Against_LossRate(Comparison=1)
+    plot_Mean_Variance_Median_Std_Against_LossRate(flights,1)
 
 
 
