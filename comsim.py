@@ -392,6 +392,9 @@ class GenericClientServerAgent(ProtocolAgent):
         # not yet done with the communication sequence
         self.done = False
 
+        # Time taken by handshake (initialiyed to zero)
+        self.doneAtTime=0
+
         # the number of transmissions for each flight (one entry per flight)
         self.transmissions = [0] * len(flightStructure)
 
