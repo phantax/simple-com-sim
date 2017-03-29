@@ -48,41 +48,55 @@ def main(argv):
 
     flights = [
         [
-            ProtocolMessage('ClientHello', 1)
+            ProtocolMessage('ClientHello', 87)
         ],
         [
-            ProtocolMessage('ServerHello', 1),
-            ProtocolMessage('Certificate', 1),
-            ProtocolMessage('ServerKeyExchange', 1),
-            ProtocolMessage('CertificateRequest', 1),
-            ProtocolMessage('ServerHelloDone', 1)
+            ProtocolMessage('ServerHello', 107),
+            ProtocolMessage('Certificate', 834),
+            ProtocolMessage('ServerKeyExchange', 165),
+            ProtocolMessage('CertificateRequest', 71),
+            ProtocolMessage('ServerHelloDone', 25)
         ],
         [
-            ProtocolMessage('Certificate', 1),
-            ProtocolMessage('ClientKeyExchange', 1),
-            ProtocolMessage('CertificateVerify', 1),
-            ProtocolMessage('ChangeCipherSpec', 1),
-            ProtocolMessage('Finished', 1)
+            ProtocolMessage('Certificate', 834),
+            ProtocolMessage('ClientKeyExchange', 91),
+            ProtocolMessage('CertificateVerify', 97),
+            ProtocolMessage('ChangeCipherSpec', 13),
+            ProtocolMessage('Finished', 37)
         ],
         [
-            ProtocolMessage('ChangeCipherSpec', 1),
-            ProtocolMessage('Finished', 1)
+            ProtocolMessage('ChangeCipherSpec', 13),
+            ProtocolMessage('Finished', 37)
         ]
     ]
+
+
+
+    #             <<< Client >>>             <<< Server >>>
+    #
+    # [Flight 1]  ClientHello       ---> 
+    # 
+    # [Flight 2]					    <--- ServerHello 
+    #            					    <--- ChangeCipherSpec
+    # 							        <--- Finished
+    # 
+    # [Flight 3]  ChangeCipherSpec  --->
+    # 			  Finished	        --->
+    # 
+
+
 
     logger = Logger()
     scheduler = Scheduler()
 
-    msg_loss_rate = 0.1
+    msg_loss_rate = 0.0
 
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=msg_loss_rate, inter_msg_time=0.001, logger=logger)
+    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=msg_loss_rate, inter_msg_time=0.0, logger=logger)
 
     #timeouts = None
-    timeouts = lambda i: 2**i
+    timeouts = lambda i: 10 * (2**i)
 
-    blocker = BlockingAgent('blocker', scheduler, 1000., 0.0009, queuing=True)
-    #blocker.start()
-
+    blocker = BlockingAgent('blocker', scheduler, 500., 0.001, min_sep_time = 0.00099, queuing=False, logger=logger)
     server = GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
     client = GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
 
@@ -90,9 +104,12 @@ def main(argv):
     medium.registerAgent(server)
     medium.registerAgent(client)
 
+    #blocker.start()
     client.trigger()
         
     scheduler.run()
+
+    print(medium.getUsage())
 
 
     #server.printStatistics()
