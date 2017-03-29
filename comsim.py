@@ -110,14 +110,17 @@ class Scheduler(object):
         self.time = 0.
         self.queue = Queue.PriorityQueue()
 
-    def registerEventAbs(self, event, time, priority=0):
+    def registerEventAbs(self, event, time=None):
+        # time is None means execute event now
+        if time is None:
+            time = self.time
         if time < self.time:
             raise Exception('Cannot register event in past')
-        self.queue.put((time, priority, event))
+        self.queue.put((time, event))
         return time
 
-    def registerEventRel(self, event, time, priority=0):
-        return self.registerEventAbs(event, self.time + time, priority)
+    def registerEventRel(self, event, time):
+        return self.registerEventAbs(event, self.time + time)
 
     def getTime(self):
         return self.time
@@ -135,7 +138,7 @@ class Scheduler(object):
             return self.time
 
         # retrieve the next event from the queue
-        time, priority, event = self.queue.get()
+        time, event = self.queue.get()
         if time < self.time:
             raise Exception('Cannot handle event from past')
 
@@ -219,7 +222,7 @@ class Agent(object):
 
     def log(self, text):
         if self.logger:        
-            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
+            header = '[{0:>.8f}s]'.format(self.scheduler.getTime())
             self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
 
 
@@ -269,12 +272,13 @@ class BlockingAgent(Agent):
             self.queue = 1
 
         # Trigger arbitration of medium to ensure medium access
-        self.medium.arbitrate()
+        if (self.medium):
+            self.medium.arbitrate()
 
         # register next blocking request
         nextTick = self.scheduler.registerEventRel(
                 Callback(self.tick), 1. / self.frequency)
-
+        self.log('------------> Block request for {0}'.format(self.getName()))
     def offerMedium(self, medium):
 
         if not self.withhold and self.queue > 0:        
@@ -354,7 +358,7 @@ class ProtocolAgent(Agent):
             times = [m[2] for m in self.txQueue]
             if (max(times) - min(times)) > 0.:
                 self.log(TextFormatter.makeBoldYellow('Warning: Potential' + \
-                        ' message congestion for {0} (N = {1}, d = {2:>.3f}s)' \
+                        ' message congestion for {0} (N = {1}, d = {2:>.8f}s)' \
                                 .format(self.name, len(self.txQueue),
                                         max(times) - min(times))))
 
@@ -431,7 +435,7 @@ class GenericClientServerAgent(ProtocolAgent):
                     print('--> {0}:'.format(self.flights[i][j].getName()))
                     print('  - received: {0} time(s)'.format(
                             self.receptions[i][j]))
-                    print('  - first reception at: {0:>.3f}s'.format(
+                    print('  - first reception at: {0:>.8f}s'.format(
                             self.first_receptions[i][j]))
             else:
                 for j in range(len(self.flights[i])):
@@ -558,7 +562,7 @@ class GenericClientServerAgent(ProtocolAgent):
         # here: self.currentFlight == expectedFlight
         elif min(self.receptions[self.currentFlight]) > 0 and not self.done:
             # >>> we received the last flight completely
-            self.log('Communication sequence completed at time {0:>.3f}s' \
+            self.log('Communication sequence completed at time {0:>.8f}s' \
                     .format(self.scheduler.getTime()))
             self.done = True
             self.doneAtTime = self.scheduler.getTime()
@@ -594,9 +598,6 @@ class GenericServerAgent(GenericClientServerAgent):
 
 
 class Medium(object):
-
-    priorityReceive = 0
-    priorityUnblock = 1
 
     def __init__(self, scheduler, **params):
         self.scheduler = scheduler
@@ -683,8 +684,8 @@ class Medium(object):
             medium.arbitrate()
 
         # Use a callback to unblock the medium after <duration>
-        self.scheduler.registerEventRel(Callback(
-                unblock, medium=self), duration, Medium.priorityUnblock)                
+        self.scheduler.registerEventRel(
+                Callback(unblock, medium=self), duration)
 
     def isBlocked(self):
         return self.blocked
@@ -706,7 +707,7 @@ class Medium(object):
 
     def log(self, text):
         if self.logger:        
-            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
+            header = '[{0:>.8f}s]'.format(self.scheduler.getTime())
             self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
 
     def initiateMsgTX(self, message, sender, receiver=None):
@@ -779,12 +780,10 @@ class Medium(object):
             else:
                 # register a callback for reception after <duration>
                 self.scheduler.registerEventRel(Callback(receiver.receive,
-                        message=message, sender=sender), duration,
-                                Medium.priorityReceive)
+                        message=message, sender=sender), duration)
         else:
             # >>> message got lost >>>
             self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
                     ' from {0} to {1}').format(sender.getName(),
                             receiver.getName(), str(message))))
-
 
