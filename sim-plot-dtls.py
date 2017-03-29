@@ -18,7 +18,8 @@ class Logger(object):
 
 
 
-def Handshake(flights,noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.1):
+def Handshake(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
+        ,LossRate=0.1):
 
     
     while(noOfTimes):
@@ -36,10 +37,13 @@ def Handshake(flights,noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.
             # No retransmission at all
             timeouts = None
 
-        server=GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger)
-        client=GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger)
+        server=GenericServerAgent('server1', scheduler, flights, \
+                timeouts=timeouts, logger=logger)
+        client=GenericClientAgent('client1', scheduler, flights, \
+                timeouts=timeouts, logger=logger)
 
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, inter_msg_time=0.001, logger=logger)
+        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, \
+                inter_msg_time=0.001, logger=logger)
         medium.registerAgent(server)
         medium.registerAgent(client)
         client.trigger()
@@ -52,11 +56,11 @@ def Handshake(flights,noOfTimes,listOfTimes,Retransmit='exponential',LossRate=0.
         else:
                 handshaketime=server.doneAtTime
             
-
-        if handshaketime != None:   #if hanshake was incomplete, don't append 0 in the list        
+        #if hanshake was incomplete, don't append 'None' in the list
+        if handshaketime != None:           
             listOfTimes.append(handshaketime)
         
-        print 'Total amount of data exchanged : ',client.txCount + server.txCount
+        print 'Total amount of data exchanged :',client.txCount + server.txCount
        
 
 
@@ -88,7 +92,8 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
         Loss_Rate+=0.1
         Loss_Rate_list.append(Loss_Rate)
         tmp_list=[]
-        Handshake(flights,100,tmp_list,Retransmit='exponential',LossRate=Loss_Rate)
+        Handshake(flights,100,tmp_list,Retransmit='exponential', \
+                LossRate=Loss_Rate)
 
         if len(tmp_list)>0:
             mean_list.append(np.mean(tmp_list))
@@ -157,14 +162,17 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
             Loss_Rate+=0.1
             tmp_list_lin=[]
 
-            Handshake(flights,100,tmp_list_lin,Retransmit='linear',LossRate=Loss_Rate)
+            Handshake(flights,100,tmp_list_lin,Retransmit='linear', \
+                    LossRate=Loss_Rate)
             if len(tmp_list_lin)>0:
                 mean_list_lin.append(np.mean(tmp_list_lin))
                 var_list_lin.append(np.var(tmp_list_lin))
                 std_list_lin.append(np.std(tmp_list_lin))
                 median_list_lin.append(np.median(tmp_list_lin))
-                OneQuarter_Quantile_list_lin.append(np.percentile(tmp_list_lin,25))
-                ThreeQuarters_Quantile_list_lin.append(np.percentile(tmp_list_lin,75))
+                OneQuarter_Quantile_list_lin.append(np.percentile \
+                        (tmp_list_lin,25))
+                ThreeQuarters_Quantile_list_lin.append(np.percentile \
+                        (tmp_list_lin,75))
             
 
         plt.figure(1)
@@ -192,21 +200,24 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
         plt.xlabel('Loss Rate')
         plt.ylabel('Median')
         plt.title('Loss Rate v/s Median of Handshake Time')
-        plt.plot(Loss_Rate_list,median_list,'r',Loss_Rate_list,median_list_lin,'b')
+        plt.plot(Loss_Rate_list,median_list,'r',Loss_Rate_list, \
+                median_list_lin,'b')
 
 
         plt.figure(5)
         plt.xlabel('Loss Rate')
         plt.ylabel('0.25-Quantile / 25th Percentile')
         plt.title('Loss Rate v/s 0.25-Quantile')
-        plt.plot(Loss_Rate_list,OneQuarter_Quantile_list,'r',Loss_Rate_list,OneQuarter_Quantile_list_lin,'b')
+        plt.plot(Loss_Rate_list,OneQuarter_Quantile_list,'r', \
+                Loss_Rate_list,OneQuarter_Quantile_list_lin,'b')
 
 
         plt.figure(6)
         plt.xlabel('Loss Rate')
         plt.ylabel('0.75-Quantile / 75th Percentile')
         plt.title('Loss Rate v/s 0.75-Quantile')
-        plt.plot(Loss_Rate_list,ThreeQuarters_Quantile_list,'r',Loss_Rate_list,ThreeQuarters_Quantile_list_lin,'b')
+        plt.plot(Loss_Rate_list,ThreeQuarters_Quantile_list,'r',Loss_Rate_list,\
+                ThreeQuarters_Quantile_list_lin,'b')
 
 
         plt.show()
