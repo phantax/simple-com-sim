@@ -19,7 +19,46 @@ class Logger(object):
         lHeader = [header] + [''] * (len(lText) - 1)
         print('\n'.join(['{0:10} {1}'.format(h, t) \
                 for h, t in zip(lHeader, lText)]))
+def printFlights(flights):
 
+    # iterate over flights
+    for flight in flights:
+        
+        
+        print('')
+        
+        # iterate over messages in flight
+        for msg in flight:
+
+            print(str(msg))
+            
+
+def fragmentMessages(flights, payload_len, header_len):
+    
+    fragmentedFlights = []
+    
+    # iterate over flights
+    for flight in flights:
+        
+        fragmentedFlight = []
+        
+        # iterate over messages in flight
+        for msg in flight:
+            
+            # the message length
+            msgLen = msg.getLength()
+            
+            i = 0
+            while msgLen > 0:
+                fragLen = min(msgLen, payload_len)
+                msgLen -= fragLen
+                fragmentedFlight += [ProtocolMessage('{0}-f{1}-size:{2}' \
+                        .format(msg.getName(), i, fragLen + header_len), fragLen + header_len)]
+                i += 1
+        
+        fragmentedFlights += [fragmentedFlight]
+
+    return fragmentedFlights
 
 #
 #____________________________________________________________________________________
@@ -48,72 +87,81 @@ def main(argv):
 
     flights = [
         [
-            ProtocolMessage('ClientHello', 87)
+            ProtocolMessage('C1', 92)
         ],
         [
-            ProtocolMessage('ServerHello', 107),
-            ProtocolMessage('Certificate', 834),
-            ProtocolMessage('ServerKeyExchange', 165),
-            ProtocolMessage('CertificateRequest', 71),
-            ProtocolMessage('ServerHelloDone', 25)
+            ProtocolMessage('S1', 651),
+           #ProtocolMessage('ServerKeyExchange', 10),
+           # ProtocolMessage('CertificateRequest', 10),
+           # ProtocolMessage('ServerHelloDone', 100)
         ],
         [
-            ProtocolMessage('Certificate', 834),
-            ProtocolMessage('ClientKeyExchange', 91),
-            ProtocolMessage('CertificateVerify', 97),
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
+            ProtocolMessage('C2', 553),
+            #ProtocolMessage('ClientKeyExchange', 10),
+            #ProtocolMessage('CertificateVerify', 10),
+            #ProtocolMessage('ChangeCipherSpec', 1),
+            #ProtocolMessage('Finished', 1)
         ],
         [
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
+            #ProtocolMessage('ChangeCipherSpec', 1),
+            ProtocolMessage('S2', 30)
         ]
     ]
-
-
-
-    #             <<< Client >>>             <<< Server >>>
-    #
-    # [Flight 1]  ClientHello       ---> 
-    # 
-    # [Flight 2]					    <--- ServerHello 
-    #            					    <--- ChangeCipherSpec
-    # 							        <--- Finished
-    # 
-    # [Flight 3]  ChangeCipherSpec  --->
-    # 			  Finished	        --->
-    # 
-
-
+    fragments = fragmentMessages(flights, 7, 10.92)
 
     logger = Logger()
     scheduler = Scheduler()
 
     msg_loss_rate = 0.0
 
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=msg_loss_rate, inter_msg_time=0.0, logger=logger)
+    medium = Medium(scheduler, data_rate=64000., msg_loss_rate=msg_loss_rate, inter_msg_time=0.000, logger=logger)
 
-    #timeouts = None
-    timeouts = lambda i: 10 * (2**i)
+    timeouts = None
+    #timeouts = lambda i: 2**i
 
-    blocker = BlockingAgent('blocker', scheduler, 500., 0.001, min_sep_time = 0.00099, queuing=False, logger=logger)
-    server = GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
-    client = GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
+    #blocker = BlockingAgent('blocker', scheduler,  1000000/281, 0.00028, queuing=False, medium = medium,logger=logger,min_sep_time = .000001)
+    #blocker.start()
+   
+    #blocker1.start()
+    def stopBlockers():
+        blocker1.stop()
+        blocker2.stop()
+    blocker1 = BlockingAgent('blocker1', scheduler,  1000000/281, 0.00028, queuing=False,logger=logger,min_sep_time = .000001)
+    blocker1.start()
+    blocker2 = BlockingAgent('blocker2', scheduler,  1000000/562, 0.00028, queuing=False,logger=logger,min_sep_time = .000001)
+    #blocker2.start()
+    server = GenericServerAgent('server1', scheduler, fragments, timeouts=timeouts, logger=logger, onComplete=stopBlockers,min_sep_time = .000001)
+    client = GenericClientAgent('client1', scheduler, fragments, timeouts=timeouts, logger=logger, onComplete=stopBlockers,min_sep_time = .000001)
 
-    medium.registerAgent(blocker, 0)
+    medium.registerAgent(blocker1, 0)
+    #medium.registerAgent(blocker2, 1)
+    #blocker1.start()
+    #medium.registerAgent(blocker2, 1)
     medium.registerAgent(server)
     medium.registerAgent(client)
 
-    #blocker.start()
-    client.trigger()
+    x = 1
+    while (x == 1):
+        freq = 281
         
-    scheduler.run()
-
-    print(medium.getUsage())
-
-
-    #server.printStatistics()
-    #client.printStatistics()
+        #blocker2 = BlockingAgent('blocker2', scheduler,  1000000/561, 0.00028, queuing=False, medium = medium,logger=logger,min_sep_time = .000001)
+        #blocker2.start()
+        client.trigger()
+        
+        scheduler.run()
+        #medium.registerAgent(blocker1, 0)
+        b1 = medium.getUsage()['blocker1']
+        #b2 = medium.getUsage()['blocker2']
+        c = medium.getUsage()['client1']
+        s = medium.getUsage()['server1']
+        print "client ----->" + str(c)
+        print "server ----->" + str(s)
+        print "blocker ---->" + str(b1)
+        print((medium.getUsage()['blocker1'])/((medium.getUsage()['client1'])+(medium.getUsage()['server1'])+(medium.getUsage()['blocker1']))*100)
+        x = 0
+        #print ((b1+b2)/(b1+b2+c+s))
+        #server.printStatistics()
+        #client.printStatistics()
 
 #
 # _____________________________________________________________________________
