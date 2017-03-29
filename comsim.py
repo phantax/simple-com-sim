@@ -392,8 +392,8 @@ class GenericClientServerAgent(ProtocolAgent):
         # not yet done with the communication sequence
         self.done = False
 
-        # Time taken by handshake (initialiyed to zero)
-        self.doneAtTime=0
+        # Time taken to complete the communication sequence
+        self.doneAtTime = None
 
         # the number of transmissions for each flight (one entry per flight)
         self.transmissions = [0] * len(flightStructure)
@@ -404,9 +404,6 @@ class GenericClientServerAgent(ProtocolAgent):
         # keep track of the time when a message has been received first
         self.first_receptions = [[None] * len(flight) for flight in flightStructure]
 
-        # Flag for stopping Retransmissions
-        
-        self.Retransmission_flag=False
         # additionally keep track of the messages received in the second-to-last flight
         if len(flightStructure) > 1:
             # >>> there is more than one flight
