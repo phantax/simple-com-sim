@@ -132,6 +132,7 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
 
 
 
+
 #
 #_______________________________________________________________________________
 #
@@ -147,7 +148,8 @@ def drawFigure(NoOfFigs,ylabels,Retranmission_Criteria,*param):
         if Retranmission_Criteria == 'exponential' and len(param)==2:        
             plt.plot(param[0],param[1][count-1])
         elif Retranmission_Criteria == 'both' and len(param)==3:
-            plt.plot(param[0],param[1][count-1],'r',param[0],param[2][count-1],'b')
+            plt.plot(param[0],param[1][count-1],'r',param[0], \
+                    param[2][count-1],'b')
         count+=1
         
     plt.show()
