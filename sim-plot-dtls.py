@@ -79,12 +79,7 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
 
 
     Loss_Rate=0
-    mean_list=[]    
-    var_list=[]
-    std_list=[]
-    median_list=[]
-    OneQuarter_Quantile_list=[]
-    ThreeQuarters_Quantile_list=[]
+    ListOfStats=[[],[],[],[],[],[]]
 
     Loss_Rate_list=[]
 
@@ -96,66 +91,24 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
                 LossRate=Loss_Rate)
 
         if len(tmp_list)>0:
-            mean_list.append(np.mean(tmp_list))
-            var_list.append(np.var(tmp_list))
-            std_list.append(np.std(tmp_list))
-            median_list.append(np.median(tmp_list))
-            OneQuarter_Quantile_list.append(np.percentile(tmp_list,25))
-            ThreeQuarters_Quantile_list.append(np.percentile(tmp_list,75))
+            ListOfStats[0].append(np.mean(tmp_list))
+            ListOfStats[1].append(np.var(tmp_list))
+            ListOfStats[2].append(np.std(tmp_list))
+            ListOfStats[3].append(np.median(tmp_list))
+            ListOfStats[4].append(np.percentile(tmp_list,25))
+            ListOfStats[5].append(np.percentile(tmp_list,75))
 
+
+        
+    ylabel=['Mean','Variance','Standard deviation','Median','0.25-Quantile', \
+            '0.75-Quantile']
     if Comparison==0:
-        plt.figure(1)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Mean')
-        plt.title('Loss Rate v/s Mean Handshake Time')
-        plt.plot(Loss_Rate_list,mean_list)
-
-
-        plt.figure(2)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Variance')
-        plt.title('Loss Rate v/s Variance of Handshake Time')
-        plt.plot(Loss_Rate_list,var_list)
-
-
-        plt.figure(3)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Std')
-        plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
-        plt.plot(Loss_Rate_list,std_list)
-
-
-        plt.figure(4)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Median')
-        plt.title('Loss Rate v/s Median of Handshake Time')
-        plt.plot(Loss_Rate_list,median_list)
-
-
-        plt.figure(5)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('0.25-Quantile / 25th Percentile')
-        plt.title('Loss Rate v/s 0.25-Quantile')
-        plt.plot(Loss_Rate_list,OneQuarter_Quantile_list)
-
-
-        plt.figure(6)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('0.75-Quantile / 75th Percentile')
-        plt.title('Loss Rate v/s 0.75-Quantile')
-        plt.plot(Loss_Rate_list,ThreeQuarters_Quantile_list)
-
-
-        plt.show()
+  
+        drawFigure(6,ylabel,'exponential',Loss_Rate_list,ListOfStats)
 
     elif Comparison==1:
         Loss_Rate=0
-        mean_list_lin=[]   
-        var_list_lin=[]
-        std_list_lin=[]
-        median_list_lin=[]
-        OneQuarter_Quantile_list_lin=[]
-        ThreeQuarters_Quantile_list_lin=[]
+        ListOfStats_lin=[[],[],[],[],[],[]]
         
 
         while Loss_Rate<0.7:
@@ -165,69 +118,47 @@ def plot_Mean_Variance_Median_Std_Against_LossRate(flights,Comparison=0):
             Handshake(flights,100,tmp_list_lin,Retransmit='linear', \
                     LossRate=Loss_Rate)
             if len(tmp_list_lin)>0:
-                mean_list_lin.append(np.mean(tmp_list_lin))
-                var_list_lin.append(np.var(tmp_list_lin))
-                std_list_lin.append(np.std(tmp_list_lin))
-                median_list_lin.append(np.median(tmp_list_lin))
-                OneQuarter_Quantile_list_lin.append(np.percentile \
+                ListOfStats_lin[0].append(np.mean(tmp_list_lin))
+                ListOfStats_lin[1].append(np.var(tmp_list_lin))
+                ListOfStats_lin[2].append(np.std(tmp_list_lin))
+                ListOfStats_lin[3].append(np.median(tmp_list_lin))
+                ListOfStats_lin[4].append(np.percentile \
                         (tmp_list_lin,25))
-                ThreeQuarters_Quantile_list_lin.append(np.percentile \
+                ListOfStats_lin[5].append(np.percentile \
                         (tmp_list_lin,75))
             
 
-        plt.figure(1)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Mean')
-        plt.title('Loss Rate v/s Mean Handshake Time')
-        plt.plot(Loss_Rate_list,mean_list,'r',Loss_Rate_list,mean_list_lin,'b')
-
-
-        plt.figure(2)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Variance')
-        plt.title('Loss Rate v/s Variance of Handshake Time')
-        plt.plot(Loss_Rate_list,var_list,'r',Loss_Rate_list,var_list_lin,'b')
-
-
-        plt.figure(3)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Std')
-        plt.title('Loss Rate v/s Standard Deviation of Handshake Time')
-        plt.plot(Loss_Rate_list,std_list,'r',Loss_Rate_list,std_list_lin,'b')
-
-
-        plt.figure(4)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('Median')
-        plt.title('Loss Rate v/s Median of Handshake Time')
-        plt.plot(Loss_Rate_list,median_list,'r',Loss_Rate_list, \
-                median_list_lin,'b')
-
-
-        plt.figure(5)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('0.25-Quantile / 25th Percentile')
-        plt.title('Loss Rate v/s 0.25-Quantile')
-        plt.plot(Loss_Rate_list,OneQuarter_Quantile_list,'r', \
-                Loss_Rate_list,OneQuarter_Quantile_list_lin,'b')
-
-
-        plt.figure(6)
-        plt.xlabel('Loss Rate')
-        plt.ylabel('0.75-Quantile / 75th Percentile')
-        plt.title('Loss Rate v/s 0.75-Quantile')
-        plt.plot(Loss_Rate_list,ThreeQuarters_Quantile_list,'r',Loss_Rate_list,\
-                ThreeQuarters_Quantile_list_lin,'b')
-
-
-        plt.show()
-
+        drawFigure(6,ylabel,'both',Loss_Rate_list,ListOfStats,ListOfStats_lin)
 
 
 
 #
-#________________________________________________________________________________________
+#_______________________________________________________________________________
 #
+
+
+def drawFigure(NoOfFigs,ylabels,Retranmission_Criteria,*param):
+    count=1
+    while count <= NoOfFigs:
+        plt.figure(count)
+        plt.xlabel('Loss Rate')
+        plt.ylabel(ylabels[count-1])
+        plt.title('Loss Rate v/s {0}'.format(ylabels[count-1]))
+        if Retranmission_Criteria == 'exponential' and len(param)==2:        
+            plt.plot(param[0],param[1][count-1])
+        elif Retranmission_Criteria == 'both' and len(param)==3:
+            plt.plot(param[0],param[1][count-1],'r',param[0],param[2][count-1],'b')
+        count+=1
+        
+    plt.show()
+
+
+
+#
+#_______________________________________________________________________________
+#
+
+
 
 
 def plotHistogram(HandshakeTimesList):
@@ -237,7 +168,7 @@ def plotHistogram(HandshakeTimesList):
     if max(HandshakeTimesList)-min(HandshakeTimesList)>1000:
         plt.xscale('log')
 		
-    plt.hist(HandshakeTimesList,bins='auto',alpha=0.5,label='1')
+    plt.hist(HandshakeTimesList, bins='auto', alpha=0.5, label='1')
     plt.title("Histogram")
     plt.xlabel("Handshaketime")
     plt.ylabel("Frequency")
