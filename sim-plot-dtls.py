@@ -6,6 +6,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import OrderedDict
+import json
 
 
 class Logger(object):
@@ -16,64 +17,77 @@ class Logger(object):
         print('\n'.join(['{0:10} {1}'.format(h, t) \
                 for h, t in zip(lHeader, lText)]))
 
+#
+#_______________________________________________________________________________
+#
+
+def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
+        LossRate=0.1):
+    tempDict={}
+
+    logger = Logger()
+
+    scheduler = Scheduler()
+
+    if RetransmissionCriteria == 'exponential':
+        timeouts = lambda i: 10*2**i if i < 10 else None
+    elif RetransmissionCriteria == 'linear':
+        timeouts = lambda i: 10*(i + 1) if i < 10 else None
+    else:
+        # No retransmission at all
+        timeouts = None
+
+    server=GenericServerAgent('server1', scheduler, flights, \
+            timeouts=timeouts)
+    client=GenericClientAgent('client1', scheduler, flights, \
+            timeouts=timeouts)
+
+    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, \
+            inter_msg_time=0.001)
+    medium.registerAgent(server)
+    medium.registerAgent(client)
+    client.trigger()
+        
+    scheduler.run()
+
+    # Last flight can be received at either Client or Server side 
+    if len(flights)%2==0:
+            handshaketime=client.doneAtTime
+    else:
+            handshaketime=server.doneAtTime
+        
+    #if hanshake was incomplete, don't append 'None' in the list
+    if handshaketime != None:           
+        listOfTimes.append(handshaketime)
 
 
-def Handshake(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
-        ,LossRate=0.1):
-
+    tempDict['HS-Time']=round(handshaketime,2)
+    tempDict['Total-Data']=client.txCount + server.txCount    
+    #print 'Total amount of data exchanged :',client.txCount + server.txCount
+    return tempDict
     
+
+#
+#_______________________________________________________________________________
+#
+
+def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
+        ,LossRate=0.1):
+    ExportData=[]
     while(noOfTimes):
         noOfTimes-=1
-
-        logger = Logger()
-
-        scheduler = Scheduler()
-
-        if Retransmit == 'exponential':
-            timeouts = lambda i: 10*2**i if i < 10 else None
-        elif Retransmit == 'linear':
-            timeouts = lambda i: 10*(i + 1) if i < 10 else None
-        else:
-            # No retransmission at all
-            timeouts = None
-
-        server=GenericServerAgent('server1', scheduler, flights, \
-                timeouts=timeouts, logger=logger)
-        client=GenericClientAgent('client1', scheduler, flights, \
-                timeouts=timeouts, logger=logger)
-
-        medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, \
-                inter_msg_time=0.001, logger=logger)
-        medium.registerAgent(server)
-        medium.registerAgent(client)
-        client.trigger()
-            
-        scheduler.run()
-
-        # Last flight can be received at either Client or Server side 
-        if len(flights)%2==0:
-                handshaketime=client.doneAtTime
-        else:
-                handshaketime=server.doneAtTime
-            
-        #if hanshake was incomplete, don't append 'None' in the list
-        if handshaketime != None:           
-            listOfTimes.append(handshaketime)
-        
-        print 'Total amount of data exchanged :',client.txCount + server.txCount
-       
-
+        result=Handshake(flights,listOfTimes,RetransmissionCriteria=Retransmit,\
+                LossRate=0.1)
+        ExportData.append(result)
+    
+    with open('Output_Data','w') as outputfile:
+        json.dump(ExportData,outputfile,sort_keys=True,indent=1)
 
 
 #
 #______________________________________________________________________________
 #
 
-
-
-#
-#________________________________________
-#
 
 
 def calculationsForPlots(flights,RetrasmissionCriteria):
@@ -129,13 +143,15 @@ def plot_All_Handshakes(RetransmissionCriteria,Comparison,*param):
         counter=len(param)
         while counter > 0:
             templist = []
-            templist=calculationsForPlots(param[len(param) - counter],RetransmissionCriteria)
+            templist=calculationsForPlots(param[len(param) - counter], \
+                    RetransmissionCriteria)
             ListOfStats.append(templist)
 
             counter-=1
 
 
-        drawFigure(6,ylabel,RetransmissionCriteria,Comparison,Loss_Rate_list,ListOfStats)
+        drawFigure(6,ylabel,RetransmissionCriteria,Comparison,Loss_Rate_list, \
+                ListOfStats)
         
 
 
@@ -152,14 +168,16 @@ def plot_All_Handshakes(RetransmissionCriteria,Comparison,*param):
         ListOfAllLists.append(templist_lin)
       
 
-        drawFigure(6,ylabel,RetransmissionCriteria,Comparison,Loss_Rate_list,ListOfAllLists)
+        drawFigure(6,ylabel,RetransmissionCriteria,Comparison,Loss_Rate_list, \
+                ListOfAllLists)
          
 #
 #_______________________________________________________________________________
 #
 
 
-def drawFigure(NoOfFigs,ylabels,Retranmission_Criteria,Comparison,Loss_Rate,CompleteList):
+def drawFigure(NoOfFigs,ylabels,Retranmission_Criteria,Comparison, \
+        Loss_Rate,CompleteList):
     count=1
     while count <= NoOfFigs:
         plt.figure(count)
@@ -173,10 +191,9 @@ def drawFigure(NoOfFigs,ylabels,Retranmission_Criteria,Comparison,Loss_Rate,Comp
             plt.plot(Loss_Rate,CompleteList[i][count-1],label=ylabels[count-1])
             i+=1
 
-
-
         count+=1
-        plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3,ncol=2, mode="expand", borderaxespad=0.)    
+        plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3,ncol=2, \
+                mode="expand", borderaxespad=0.)    
     plt.show()
 #
 #_______________________________________________________________________________
@@ -251,16 +268,16 @@ def main(argv):
 
     ]
 
-#    HandshakeList=[]
+    HandshakeList=[]
 
-#    Handshake_HS1(flights,1,HandshakeList,'linear',LossRate=0)
+    MultipleHandshakes(flights,10000,HandshakeList,'linear',LossRate=0)
 
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
 #    plot_Mean_Variance_Median_Std_Against_LossRate(flights,1)
 
 
-    plot_All_Handshakes('exponential',0,flights,flights2)
+#    plot_All_Handshakes('exponential',0,flights,flights2)
 
 #    calculationsForPlots(flights,'linear')
 #
