@@ -22,7 +22,7 @@ class Logger(object):
 #
 
 def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
-        LossRate=0.1):
+        LossRate=0.2):
     tempDict={}
 
     logger = Logger()
@@ -56,16 +56,54 @@ def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
     else:
             handshaketime=server.doneAtTime
         
-    #if hanshake was incomplete, don't append 'None' in the list
+    # if hanshake was incomplete, don't append 'None' in the list
     if handshaketime != None:           
         listOfTimes.append(handshaketime)
 
 
-    tempDict['HS-Time']=round(handshaketime,2)
-    tempDict['Total-Data']=client.txCount + server.txCount    
-    #print 'Total amount of data exchanged :',client.txCount + server.txCount
+    tempDict['HS-Time']=handshaketime
+    tempDict['Total-Data']=client.txCount + server.txCount 
+    tempDict['SFData']=Superfluous_Data(flights,client.receptions,server.receptions) 
+
     return tempDict
     
+#
+#_______________________________________________________________________________
+#
+
+def Superfluous_Data(flights,ClientData,ServerData):
+
+    # List of all message lengths 
+    msgLength_list=[]
+
+
+    for elements in flights:
+        for values in elements:
+            msgLength_list.append(values.getLength())
+
+    # Client message reception frequency
+    clientdata_frequency=[]
+    for elements in ClientData:
+        for values in elements:
+              clientdata_frequency.append(values)
+
+    # Server message reception frequency
+    serverdata_frequency=[]
+    for elements in ServerData:
+        for values in elements:
+              serverdata_frequency.append(values)
+    
+    # If a message is transmitted more than once, it's Superfluous
+    superfluousData_frequency= [x+y-1 for x,y in zip(clientdata_frequency, \
+            serverdata_frequency)]
+    
+
+    superfluousData_list= [x*y for x,y in zip(superfluousData_frequency, \
+            msgLength_list)]
+
+    SuperFluous_data=sum(superfluousData_list)
+
+    return SuperFluous_data
 
 #
 #_______________________________________________________________________________
@@ -77,7 +115,7 @@ def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
     while(noOfTimes):
         noOfTimes-=1
         result=Handshake(flights,listOfTimes,RetransmissionCriteria=Retransmit,\
-                LossRate=0.1)
+                LossRate=LossRate)
         ExportData.append(result)
     
     with open('Output_Data','w') as outputfile:
@@ -270,7 +308,7 @@ def main(argv):
 
     HandshakeList=[]
 
-    MultipleHandshakes(flights,10000,HandshakeList,'linear',LossRate=0)
+    MultipleHandshakes(flights,200,HandshakeList,'linear',LossRate=0.2)
 
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
