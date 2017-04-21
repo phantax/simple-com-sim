@@ -78,6 +78,17 @@ class TextFormatter(object):
         lines = [' '*(4 if s else 0)*level + s for s in str.split('\n')]
         return '\n'.join(lines)
 
+    @staticmethod
+    def nth(number):
+        if number == 1:
+            return '1st'
+        elif number == 2:
+            return '2nd'
+        elif number == 3:
+            return '3rd'
+        else:
+            return '{0}th'.format(number)    
+
 
 class Event(object):
     """
@@ -342,9 +353,10 @@ class ProtocolAgent(Agent):
             return False
 
     # called by subclasses of ProtocolAgent
-    def scheduleMsgTX(self, message, receiver=None):
+    def addMsgToTxQueue(self, message, receiver=None):
 
-        self.log('Scheduling message {0} for transmission'.format(str(message)))                
+        self.log('Adding message <{0}> to transmission queue' \
+                .format(message.getName()))
 
         # add message to transmission queue
         self.txQueue.append((message, receiver, self.scheduler.getTime()))
@@ -396,10 +408,10 @@ class GenericClientServerAgent(ProtocolAgent):
         self.doneAtTime = None
 
         # the number of transmissions for each flight (one entry per flight)
-        self.transmissions = [0] * len(flightStructure)
+        self.nTx = [0] * len(flightStructure)
 
         # keep track of the number of times messages have been received
-        self.receptions = [[0] * len(flight) for flight in flightStructure]
+        self.nRx = [[0] * len(flight) for flight in flightStructure]
 
         # keep track of the time when a message has been received first
         self.first_receptions = [[None] * len(flight) for flight in flightStructure]
@@ -407,7 +419,7 @@ class GenericClientServerAgent(ProtocolAgent):
         # additionally keep track of the messages received in the second-to-last flight
         if len(flightStructure) > 1:
             # >>> there is more than one flight
-            self.receptions_stl_flight = [False] * len(flightStructure[-2])
+            self.nRx_stl_flight = [False] * len(flightStructure[-2])
 
         # the retransmission timeout function
         self.timeouts = kwparam.get('timeouts', None)
@@ -430,14 +442,14 @@ class GenericClientServerAgent(ProtocolAgent):
                 for j in range(len(self.flights[i])):
                     print('--> {0}:'.format(self.flights[i][j].getName()))
                     print('  - received: {0} time(s)'.format(
-                            self.receptions[i][j]))
+                            self.nRx[i][j]))
                     print('  - first reception at: {0:>.3f}s'.format(
                             self.first_receptions[i][j]))
             else:
                 for j in range(len(self.flights[i])):
                     print('--> {0}:'.format(self.flights[i][j].getName()))
                     print('  - sent: {0} time(s)'.format(
-                            self.transmissions[i]))
+                            self.nTx[i]))
 
     def gotoNextFlight(self):
         # move on to the next flight if this is not the last flight
@@ -448,35 +460,41 @@ class GenericClientServerAgent(ProtocolAgent):
     def transmitFlight(self, flight):
 
         if not self.isTXFlight(flight):
-            raise Exception('Trying to transmit the wrong flight!')
-
-        if self.transmissions[flight] == 0:
-            self.log('Transmitting flight #{0}'.format(flight + 1))
-        else:
-            self.log('Retransmitting flight #{0} (transmitted {1} ' \
-                    .format(flight + 1, self.transmissions[flight]) + 
-                            'time(s) before)')
-
-        # transmit messages one by one
-        for msg in self.flights[flight]:
-            self.scheduleMsgTX(copy.deepcopy(msg))
+            # >>> Somehow the flight that is asked to be transmitted
+            # is a flight that the other side should send >>>
+            raise Exception('Trying to transmit an invalid flight!')
 
         # don't trigger the retransmission of the last flight using timeout
+        RTO = None
+        strRTO = ''
         if (flight + 1) < len(self.flights):
-            timeout = self.getTimeout(self.transmissions[flight])
-            if timeout is not None:
+            RTO = self.getTimeout(self.nTx[flight])
+            strRTO = ', RTO = {0:>.1f}s'.format(RTO)
+            if RTO is not None:
                 self.scheduler.registerEventRel(Callback(
-                        self.checkFlight, flight=flight), timeout)
+                        self.checkFlight, flight=flight), RTO)
+
+        if self.nTx[flight] == 0:
+            # >>> This is the first transmission intent of this flight >>>
+            self.log('Transmitting flight #{0}'.format(flight + 1))
+        else:
+            # >>> This is a rentransmission of this flight >>>
+            self.log('Retransmitting flight #{0} ({1} retransmission{2})' \
+                    .format(flight + 1, TextFormatter.nth(self.nTx[flight]), strRTO))
+
+        # Add messages of the flight to the transmission queue
+        for msg in self.flights[flight]:
+            self.addMsgToTxQueue(copy.deepcopy(msg))
 
         # remember that this flight has been (re)transmitted 
-        self.transmissions[flight] += 1
+        self.nTx[flight] += 1
        
         # clear reception tracking of second-to-last flight
         if len(self.flights) > 1 and (flight + 1) == len(self.flights):
-            self.receptions_stl_flight = [False] * len(self.flights[-2])
+            self.nRx_stl_flight = [False] * len(self.flights[-2])
 
         # is this flight transmitted for the first time ...
-        # equivalently: if self.transmissions[flight] == 0
+        # equivalently: if self.nTx[flight] == 0
         if flight == self.currentFlight:
             # >>> YES >>>
             # move on to the next flight if this is not the last flight
@@ -486,10 +504,10 @@ class GenericClientServerAgent(ProtocolAgent):
         # the second-to-last flight has to be treated differently
         if len(self.flights) > 1 and (flight + 2) == len(self.flights):
             # retransmit if at least one message is missing
-            doRetransmit = min(self.receptions[flight + 1]) == 0
+            doRetransmit = min(self.nRx[flight + 1]) == 0
         else:
             # retransmit if every message is missing
-            doRetransmit = max(self.receptions[flight + 1]) == 0
+            doRetransmit = max(self.nRx[flight + 1]) == 0
         if doRetransmit:
             # retransmit
             self.transmitFlight(flight)
@@ -510,7 +528,7 @@ class GenericClientServerAgent(ProtocolAgent):
 
             # >>> We received an unexpected message
             # (probably from a previous flight) >>>
-            self.log(('Received unexpected message "{0}". '
+            self.log(('Received unexpected message <{0}>. '
                     + 'Expecting one of {1}').format(message.getName(), ', ' \
                             .join(['<{0}>'. format(msg) for msg in expectedMsgs])))
 
@@ -519,18 +537,18 @@ class GenericClientServerAgent(ProtocolAgent):
 
         # remember that (and when) the message has been received once (more)
         msgIndex = expectedMsgs.index(message.getName())
-        self.receptions[expectedFlight][msgIndex] += 1
+        self.nRx[expectedFlight][msgIndex] += 1
         if self.first_receptions[expectedFlight][msgIndex] is None:
             self.first_receptions[expectedFlight][msgIndex] = self.scheduler.getTime()
 
         # keep track of receptions of second-to-last flight
         if len(self.flights) > 1 and (expectedFlight + 2) == len(self.flights):
-            self.receptions_stl_flight[msgIndex] = True
+            self.nRx_stl_flight[msgIndex] = True
 
         if (self.currentFlight  + 1) < len(self.flights):
             # >>> we are NOT handling the last flight >>>
             # check whether flight has been received completely ...
-            if min(self.receptions[self.currentFlight]) > 0:
+            if min(self.nRx[self.currentFlight]) > 0:
                 # >>> YES >>>
                 self.log('Flight #{0} has been received completely' \
                         .format(self.currentFlight + 1))
@@ -542,21 +560,21 @@ class GenericClientServerAgent(ProtocolAgent):
                 # >>> NO >>>
                 missing = ', '.join(['<{0}>'.format(expectedMsgs[i]) \
                         for i in range(len(expectedMsgs)) \
-                                if self.receptions[self.currentFlight][i] == 0])
+                                if self.nRx[self.currentFlight][i] == 0])
                 self.log('Messages still missing from flight #{0}: {1}' \
                         .format(self.currentFlight + 1, missing))
 
         elif self.isTXFlight(self.currentFlight):
             # >>> we received a retransmission of the second-to-last flight
             # retransmit the last flight if we re-received the second-to-last flight completely
-            if len(self.flights) > 1 and self.receptions_stl_flight.count(False) == 0:
+            if len(self.flights) > 1 and self.nRx_stl_flight.count(False) == 0:
                 self.log(('The second-to-last flight (flight #{0}) has ' +
                         'been re-received completely').format(expectedFlight + 1))
                 # do retransmission
                 self.transmitFlight(self.currentFlight)
 
         # here: self.currentFlight == expectedFlight
-        elif min(self.receptions[self.currentFlight]) > 0 and not self.done:
+        elif min(self.nRx[self.currentFlight]) > 0 and not self.done:
             # >>> we received the last flight completely
             self.log('Communication sequence completed at time {0:>.3f}s' \
                     .format(self.scheduler.getTime()))
@@ -783,8 +801,8 @@ class Medium(object):
                                 Medium.priorityReceive)
         else:
             # >>> message got lost >>>
-            self.log(TextFormatter.makeBoldRed(('Lost message {1} sent' +
+            self.log(TextFormatter.makeBoldRed(('Lost message <{2}> sent' +
                     ' from {0} to {1}').format(sender.getName(),
-                            receiver.getName(), str(message))))
+                            receiver.getName(), message.getName())))
 
 
