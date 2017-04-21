@@ -391,12 +391,12 @@ class ProtocolAgent(Agent):
 
 class GenericClientServerAgent(ProtocolAgent):
 
-    def __init__(self, name, scheduler, flightStructure, **kwparam):
+    def __init__(self, name, scheduler, flights, **kwparam):
 
         ProtocolAgent.__init__(self, name, scheduler, **kwparam)
 
         # the flight structure defining the communication sequence
-        self.flights = flightStructure
+        self.flights = flights
 
         # the current flight
         self.currentFlight = 0
@@ -408,18 +408,18 @@ class GenericClientServerAgent(ProtocolAgent):
         self.doneAtTime = None
 
         # the number of transmissions for each flight (one entry per flight)
-        self.nTx = [0] * len(flightStructure)
+        self.nTx = [0] * len(flights)
 
         # keep track of the number of times messages have been received
-        self.nRx = [[0] * len(flight) for flight in flightStructure]
+        self.nRx = [[0] * len(flight) for flight in flights]
 
         # keep track of the time when a message has been received first
-        self.first_receptions = [[None] * len(flight) for flight in flightStructure]
+        self.first_receptions = [[None] * len(flight) for flight in flights]
 
         # additionally keep track of the messages received in the second-to-last flight
-        if len(flightStructure) > 1:
+        if len(flights) > 1:
             # >>> there is more than one flight
-            self.nRx_stl_flight = [False] * len(flightStructure[-2])
+            self.nRx_stl_flight = [False] * len(flights[-2])
 
         # the retransmission timeout function
         self.timeouts = kwparam.get('timeouts', None)
@@ -527,10 +527,28 @@ class GenericClientServerAgent(ProtocolAgent):
         if message.getName() not in expectedMsgs:
 
             # >>> We received an unexpected message
-            # (probably from a previous flight) >>>
-            self.log(('Received unexpected message <{0}>. '
-                    + 'Expecting one of {1}').format(message.getName(), ', ' \
-                            .join(['<{0}>'. format(msg) for msg in expectedMsgs])))
+            # (is it from an earlier flight?) >>>
+            potentialFlights = []
+            for iFlight in range(expectedFlight):
+                if message.getName() in [msg.getName() for msg in self.flights[iFlight]]:
+                    potentialFlights += [iFlight]
+
+            expectedMsgStr = ', '.join(['<{0}>'. format(msg) for msg in expectedMsgs])
+
+            if len(potentialFlights) == 0:
+                # >>> Received unknown message >>>
+                logStr = 'Received unknown message <{0}>.' \
+                        .format(message.getName())
+            elif len(potentialFlights) == 1:
+                # >>> Received message from an earlier flight
+                logStr = 'Received message <{0}> from earlier flight #{1}.' \
+                        .format(message.getName(), potentialFlights[0] + 1)
+            else:
+                # >>> Received message from an earlier flight
+                logStr = 'Received message <{0}> from earlier flight (warning: multiple flights possible).' \
+                        .format(message.getName())
+
+            self.log(logStr + ' Expecting one of {0}'.format(expectedMsgStr))
 
             # Just ignore it
             return
