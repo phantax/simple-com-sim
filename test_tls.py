@@ -4,7 +4,6 @@ import sys
 from comsim import *
 import math
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import OrderedDict
 
 
@@ -17,7 +16,7 @@ class Logger(object):
     def log(self, header, text):
         lText = text.split('\n')
         lHeader = [header] + [''] * (len(lText) - 1)
-        print('\n'.join(['{0:10} {1}'.format(h, t) \
+        print('\n'.join([TextFormatter.makeBoldWhite('{0:10}'.format(h)) + ' {0}'.format(t) \
                 for h, t in zip(lHeader, lText)]))
 
 
@@ -61,12 +60,12 @@ def main(argv):
             ProtocolMessage('Certificate', 834),
             ProtocolMessage('ClientKeyExchange', 91),
             ProtocolMessage('CertificateVerify', 97),
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
+            ProtocolMessage('ChangeCipherSpec', 14),
+            ProtocolMessage('Finished', 53)
         ],
         [
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
+            ProtocolMessage('ChangeCipherSpec', 14),
+            ProtocolMessage('Finished', 53)
         ]
     ]
 
@@ -90,13 +89,14 @@ def main(argv):
     scheduler = Scheduler()
 
     msg_loss_rate = 0.0
+    bit_loss_rate = 1e-4
 
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=msg_loss_rate, inter_msg_time=0.0, logger=logger)
+    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=msg_loss_rate, bit_loss_rate=bit_loss_rate, inter_msg_time=0.1, logger=logger)
 
     #timeouts = None
     timeouts = lambda i: 10 * (2**i)
 
-    blocker = BlockingAgent('blocker', scheduler, 500., 0.001, min_sep_time = 0.00099, queuing=False, logger=logger)
+    blocker = BlockingAgent('.blocker', scheduler, 500., 0.001, min_sep_time = 0.00099, queuing=False, logger=logger)
     server = GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
     client = GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
 
@@ -105,15 +105,14 @@ def main(argv):
     medium.registerAgent(client)
 
     #blocker.start()
-    client.trigger()
+
+    # Let the client start the sequence
+    scheduler.registerEventAbs(Callback(client.trigger), 0.)    
         
     scheduler.run()
 
-    print(medium.getUsage())
-
-
-    #server.printStatistics()
-    #client.printStatistics()
+    server.printStatistics()
+    client.printStatistics()
 
 #
 # _____________________________________________________________________________
@@ -124,9 +123,3 @@ if __name__ == "__main__":
 
 
 
-
-
-
-
-#listing=[]
-#Handshake_HS1(10,listing,LossRate=0)

@@ -112,6 +112,21 @@ class Callback(Event):
         self.callback(**self.pars)
 
 
+class LoggingClient(object):
+
+    def __init__(self, logger):
+        self.logger = logger
+
+    def log(self, text):
+        if self.logger:
+            timeOnce =  self.scheduler.getTimeOnce()       
+            if timeOnce is not None:
+                header = '[{0:>.3f}s]'.format(timeOnce)
+            else:
+                header = '*'
+            self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
+
+
 class Scheduler(object):
 
     def __init__(self):
@@ -119,6 +134,7 @@ class Scheduler(object):
 
     def reset(self):
         self.time = 0.
+        self.timeOnce = None
         self.queue = Queue.PriorityQueue()
 
     def registerEventAbs(self, event, time, priority=0):
@@ -132,6 +148,11 @@ class Scheduler(object):
 
     def getTime(self):
         return self.time
+
+    def getTimeOnce(self):
+        timeOnce = self.timeOnce
+        self.timeOnce = None
+        return timeOnce
 
     def done(self):
         return self.queue.empty()
@@ -152,6 +173,7 @@ class Scheduler(object):
 
         # proceed current time to event time
         self.time = time
+        self.timeOnce = time
 
         # execute the event
         event.execute()
@@ -202,12 +224,12 @@ class ProtocolMessage(Message):
         return fragments
 
 
-class Agent(object):
+class Agent(LoggingClient):
 
     def __init__(self, name, scheduler, **params):
+        LoggingClient.__init__(self, params.get('logger', None))
         self.name = name
         self.scheduler = scheduler
-        self.logger = params.get('logger', None)
         self.medium = None
 
         medium = params.get('medium', None)
@@ -227,11 +249,6 @@ class Agent(object):
 
     def receive(self, message, sender):
         pass
-
-    def log(self, text):
-        if self.logger:        
-            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-            self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
 
 
 class BlockingAgent(Agent):
@@ -398,8 +415,16 @@ class GenericClientServerAgent(ProtocolAgent):
         # the flight structure defining the communication sequence
         self.flights = flights
 
-        # the current flight
-        self.currentFlight = 0
+        # the retransmission timeout function
+        self.timeouts = kwparam.get('timeouts', None)
+
+        # communictation sequence complete callback
+        self.onComplete = kwparam.get('onComplete', None)
+
+        # reset
+        self.reset()
+
+    def reset(self):
 
         # not yet done with the communication sequence
         self.done = False
@@ -408,24 +433,22 @@ class GenericClientServerAgent(ProtocolAgent):
         self.doneAtTime = None
 
         # the number of transmissions for each flight (one entry per flight)
-        self.nTx = [0] * len(flights)
+        self.nTx = [0] * len(self.flights)
 
         # keep track of the number of times messages have been received
-        self.nRx = [[0] * len(flight) for flight in flights]
+        self.nRx = [[0] * len(flight) for flight in self.flights]
 
-        # keep track of the time when a message has been received first
-        self.first_receptions = [[None] * len(flight) for flight in flights]
+        # keep track of the times when a message has been received
+        self.tRx = [[[] for i in range(len(flight))] for flight in self.flights]
 
         # additionally keep track of the messages received in the second-to-last flight
-        if len(flights) > 1:
+        if len(self.flights) > 1:
             # >>> there is more than one flight
-            self.nRx_stl_flight = [False] * len(flights[-2])
+            self.nRx_stl_flight = [False] * len(self.flights[-2])
 
-        # the retransmission timeout function
-        self.timeouts = kwparam.get('timeouts', None)
-
-        # communictation sequence complete callback
-        self.onComplete = kwparam.get('onComplete', None)
+        # prepare to transmit / receive first flight
+        self.currentFlight = None
+        self.gotoNextFlight()
 
     def getTimeout(self, index):
         if self.timeouts:
@@ -437,25 +460,32 @@ class GenericClientServerAgent(ProtocolAgent):
     def printStatistics(self):
 
         for i in range(len(self.flights)):
-            print('\nFlight #{0}:'.format(i + 1))
-            if not self.isTXFlight(i):
+            if self.isTXFlight(i):
+                print('\nFlight #{0}: ===>'.format(i + 1))
                 for j in range(len(self.flights[i])):
-                    print('--> {0}:'.format(self.flights[i][j].getName()))
-                    print('  - received: {0} time(s)'.format(
-                            self.nRx[i][j]))
-                    print('  - first reception at: {0:>.3f}s'.format(
-                            self.first_receptions[i][j]))
+                    print('> {0} ({1}x)'.format(
+                            self.flights[i][j].getName(), self.nTx[i]))
             else:
+                print('\nFlight #{0}: <==='.format(i + 1))
                 for j in range(len(self.flights[i])):
-                    print('--> {0}:'.format(self.flights[i][j].getName()))
-                    print('  - sent: {0} time(s)'.format(
-                            self.nTx[i]))
+                    tStr = ', '.join(['{0:.2f}s'.format(t) for t in self.tRx[i][j]])
+                    print('> {0} ({1}x): {2}'.format(
+                            self.flights[i][j].getName(), self.nRx[i][j], tStr))
 
     def gotoNextFlight(self):
         # move on to the next flight if this is not the last flight
-        if (self.currentFlight + 1) < len(self.flights):
+        if self.currentFlight is None:
+            self.currentFlight = 0
+        elif (self.currentFlight + 1) < len(self.flights):
             self.currentFlight += 1
-            self.log('Now at flight #{0}'.format(self.currentFlight + 1))
+        else:
+            return
+        if self.isTXFlight(self.currentFlight):
+            self.log('Ready to transmit flight #{0}' \
+                    .format(self.currentFlight + 1))
+        else:
+            self.log('Ready to receive flight #{0}' \
+                    .format(self.currentFlight + 1))
 
     def transmitFlight(self, flight):
 
@@ -516,24 +546,22 @@ class GenericClientServerAgent(ProtocolAgent):
         ProtocolAgent.receive(self, message, sender)
 
         expectedFlight = self.currentFlight
-        if (self.currentFlight  + 1) == len(self.flights) and self.isTXFlight(self.currentFlight):
-            # >>> we are handling the last flight and are supposed to potentially retransmit it >>>
+        if (self.currentFlight + 1) == len(self.flights) and self.isTXFlight(self.currentFlight):
+            # >>> we are handling the last flight and are supposed to potentially
+            # retransmit it upon receiving the previous flight once more >>>
             expectedFlight -= 1
 
-        # the list of expected messages in the current flight
+        # the list of expected messages
         expectedMsgs = [msg.getName() for msg in self.flights[expectedFlight]]
 
         # detect unexpected messages
         if message.getName() not in expectedMsgs:
-
             # >>> We received an unexpected message
-            # (is it from an earlier flight?) >>>
-            potentialFlights = []
-            for iFlight in range(expectedFlight):
-                if message.getName() in [msg.getName() for msg in self.flights[iFlight]]:
-                    potentialFlights += [iFlight]
 
-            expectedMsgStr = ', '.join(['<{0}>'. format(msg) for msg in expectedMsgs])
+            # List all previous flights the received message might be from
+            potentialFlights = [iFlight for iFlight in range(expectedFlight)
+                    if message.getName() in [msg.getName()
+                            for msg in self.flights[iFlight]]]
 
             if len(potentialFlights) == 0:
                 # >>> Received unknown message >>>
@@ -543,21 +571,24 @@ class GenericClientServerAgent(ProtocolAgent):
                 # >>> Received message from an earlier flight
                 logStr = 'Received message <{0}> from earlier flight #{1}.' \
                         .format(message.getName(), potentialFlights[0] + 1)
+
+                
+
             else:
                 # >>> Received message from an earlier flight
                 logStr = 'Received message <{0}> from earlier flight (warning: multiple flights possible).' \
                         .format(message.getName())
 
-            self.log(logStr + ' Expecting one of {0}'.format(expectedMsgStr))
+            self.log(logStr + ' Expecting one of {0}'.format(
+                    ', '.join(['<{0}>'. format(msg) for msg in expectedMsgs])))
 
             # Just ignore it
             return
 
-        # remember that (and when) the message has been received once (more)
+        # update reception tracker
         msgIndex = expectedMsgs.index(message.getName())
         self.nRx[expectedFlight][msgIndex] += 1
-        if self.first_receptions[expectedFlight][msgIndex] is None:
-            self.first_receptions[expectedFlight][msgIndex] = self.scheduler.getTime()
+        self.tRx[expectedFlight][msgIndex] += [self.scheduler.getTime()]
 
         # keep track of receptions of second-to-last flight
         if len(self.flights) > 1 and (expectedFlight + 2) == len(self.flights):
@@ -629,18 +660,18 @@ class GenericServerAgent(GenericClientServerAgent):
         return (flight % 2) == 1
 
 
-class Medium(object):
+class Medium(LoggingClient):
 
     priorityReceive = 0
     priorityUnblock = 1
 
     def __init__(self, scheduler, **params):
+        LoggingClient.__init__(self, params.get('logger', None))
         self.scheduler = scheduler
         self.agents = {}
         self.sortedAgents = []
         self.blocked = False
         self.usage = {}
-
         self.name = params.get('name', 'Medium')
 
         # the data rate in bytes/second, None means 'unlimited'
@@ -650,7 +681,6 @@ class Medium(object):
         self.msg_loss_rate = params.get('msg_loss_rate', 0.)
         self.bit_loss_rate = params.get('bit_loss_rate', 0.)
         self.inter_msg_time = params.get('inter_msg_time', 0.)
-        self.logger = params.get('logger', None)
 
     def getName(self):
         return self.name
@@ -740,11 +770,6 @@ class Medium(object):
         else:
             return 0.
 
-    def log(self, text):
-        if self.logger:        
-            header = '[{0:>.3f}s]'.format(self.scheduler.getTime())
-            self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
-
     def initiateMsgTX(self, message, sender, receiver=None):
 
         # make sender an agent object instance
@@ -791,7 +816,7 @@ class Medium(object):
             loss_prop = None
 
         sender.log(TextFormatter.makeBoldBlue(('--> sending message {0} ' +
-                '(p_loss = {1})').format(str(message), loss_prop)))
+                '(pl = {1:.0f}%)').format(str(message), loss_prop * 100.)))
 
         if not receiver:
             # this is a broadcast (let sender not receive its own message)
@@ -817,8 +842,8 @@ class Medium(object):
                 self.scheduler.registerEventRel(Callback(receiver.receive,
                         message=message, sender=sender), duration,
                                 Medium.priorityReceive)
-        else:
-            # >>> message got lost >>>
+        # Show lost messages only for normal receivers
+        elif not receiver.getName().startswith('.'):
             self.log(TextFormatter.makeBoldRed(('Lost message <{2}> sent' +
                     ' from {0} to {1}').format(sender.getName(),
                             receiver.getName(), message.getName())))
