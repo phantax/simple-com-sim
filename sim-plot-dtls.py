@@ -22,7 +22,7 @@ class Logger(object):
 #
 
 def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
-        LossRate=0):
+        LossRate=1e-4):
     tempDict={}
 
     logger = Logger()
@@ -38,11 +38,11 @@ def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
         timeouts = None
 
     server=GenericServerAgent('server1', scheduler, flights, \
-            timeouts=timeouts,)
+            timeouts=timeouts)
     client=GenericClientAgent('client1', scheduler, flights, \
             timeouts=timeouts)
 
-    medium = Medium(scheduler, data_rate=2400./8, msg_loss_rate=LossRate, \
+    medium = Medium(scheduler, data_rate=2400./8, bit_loss_rate=LossRate, \
             inter_msg_time=0.001)
     medium.registerAgent(server)
     medium.registerAgent(client)
@@ -135,8 +135,8 @@ def calculationsForPlots(flights,RetrasmissionCriteria):
 
     Loss_Rate_list=[]
 
-    while Loss_Rate<0.7:
-        Loss_Rate+=0.1
+    while Loss_Rate<4e-4:
+        Loss_Rate+=0.5e-4
         Loss_Rate_list.append(Loss_Rate)
         tmp_list=[]
         MultipleHandshakes(flights,1000,tmp_list,Retransmit=RetrasmissionCriteria, \
@@ -172,7 +172,7 @@ def calculationsForPlots(flights,RetrasmissionCriteria):
 
 def plot_All_Handshakes(RetransmissionCriteria,Comparison,*param):
     
-    Loss_Rate_list=[0.1,0.2,0.3,0.4,0.5,0.6,0.7]
+    Loss_Rate_list=[0.5e-4,1e-4,1.5e-4,2e-4,2.5e-4,3e-4,3.5e-4,4e-4]
     ylabel=['Mean','Variance','Standard deviation','Median','0.25-Quantile', \
             '0.75-Quantile']
 
@@ -253,8 +253,37 @@ def plotHistogram(HandshakeTimesList):
 
     plt.show()
 
+#
+#_______________________________________________________________________________
+#
+
+def ackversion(flightStructure,version):
+    if version == 1:
+        result=[]
+        for element in flightStructure:
+            if len(element)==1:
+                result.append(element)
+            else:
+                count=len(element)
+                for message in element:
+                    count-=1
+                    if count == 0:
+                        result.append([message])
+                    else:
+                        result.append([message])
+                        result.append([ProtocolMessage('Ack',5)])
 
 
+        return result
+
+    elif version == 2:
+        temp=flightStructure
+        temp.append([ProtocolMessage('ACK', 5)])
+    return temp
+            
+                 
+
+    
 #
 #_______________________________________________________________________________
 #
@@ -319,16 +348,23 @@ def main(argv):
     ]
 
 
-    HandshakeList=[]
+#    HandshakeList=[]
 
-    MultipleHandshakes(flights,1000,HandshakeList,'exponential',LossRate=0)
+#    res=ackversion(flights,2)
+#    for i in res:
+#        print '#'
+#        for e in i:
+#            print str(e)
+
+
+#    MultipleHandshakes(flights,1000,HandshakeList,'exponential',LossRate=0)
 
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
 #    plot_Mean_Variance_Median_Std_Against_LossRate(flights,1)
 
-
-#    plot_All_Handshakes('exponential',0,flights,flights2)
+#    Handshake(ackversion(flights,1),HandshakeList)
+    plot_All_Handshakes('exponential',0,flights,ackversion(flights,1),ackversion(flights,2))
 
 #    calculationsForPlots(flights,'linear')
 #
