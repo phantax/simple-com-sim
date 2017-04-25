@@ -22,7 +22,7 @@ class Logger(object):
 #
 
 def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
-        LossRate=0.2):
+        LossRate=0):
     tempDict={}
 
     logger = Logger()
@@ -38,7 +38,7 @@ def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
         timeouts = None
 
     server=GenericServerAgent('server1', scheduler, flights, \
-            timeouts=timeouts)
+            timeouts=timeouts,)
     client=GenericClientAgent('client1', scheduler, flights, \
             timeouts=timeouts)
 
@@ -63,7 +63,7 @@ def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
 
     tempDict['HS-Time']=handshaketime
     tempDict['Total-Data']=client.txCount + server.txCount 
-    tempDict['SFData']=Superfluous_Data(flights,client.receptions,server.receptions) 
+    tempDict['SFData']=Superfluous_Data(flights,client.nRx,server.nRx) 
 
     return tempDict
     
@@ -110,7 +110,7 @@ def Superfluous_Data(flights,ClientData,ServerData):
 #
 
 def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
-        ,LossRate=0.1):
+        ,LossRate=0):
     ExportData=[]
     while(noOfTimes):
         noOfTimes-=1
@@ -139,7 +139,7 @@ def calculationsForPlots(flights,RetrasmissionCriteria):
         Loss_Rate+=0.1
         Loss_Rate_list.append(Loss_Rate)
         tmp_list=[]
-        Handshake(flights,100,tmp_list,Retransmit=RetrasmissionCriteria, \
+        MultipleHandshakes(flights,1000,tmp_list,Retransmit=RetrasmissionCriteria, \
                 LossRate=Loss_Rate)
 
         if len(tmp_list)>0:
@@ -149,13 +149,13 @@ def calculationsForPlots(flights,RetrasmissionCriteria):
             median.append(np.median(tmp_list))
             OneQuarter.append(np.percentile(tmp_list,25))
             ThreeQuater.append(np.percentile(tmp_list,75))
-        else:
-            mean.append(0)
-            var.append(0)
-            std.append(0)
-            median.append(0)
-            OneQuarter.append(0)
-            ThreeQuater.append(0)
+#        else:
+#            mean.append(0)
+#            var.append(0)
+#            std.append(0)
+#            median.append(0)
+#            OneQuarter.append(0)
+#            ThreeQuater.append(0)
             
     
     ListOfStats=[mean,var,std,median,OneQuarter,ThreeQuater]
@@ -226,7 +226,7 @@ def drawFigure(NoOfFigs,ylabels,Retranmission_Criteria,Comparison, \
         Flightslen=len(CompleteList)
         i=0
         while(i<Flightslen):
-            plt.plot(Loss_Rate,CompleteList[i][count-1],label=ylabels[count-1])
+            plt.plot(Loss_Rate,CompleteList[i][count-1],label=ylabels[count-1]+'(Plot:'+str(i+1)+')')
             i+=1
 
         count+=1
@@ -282,12 +282,15 @@ def main(argv):
             ProtocolMessage('ChangeCipherSpec', 13),
             ProtocolMessage('Finished', 37)
         ]
-    ]
 
+    ]
 
     flights2 = [
         [
             ProtocolMessage('ClientHello', 87)
+        ],
+        [
+            ProtocolMessage('ACK', 5)  
         ],
         [
             ProtocolMessage('ServerHello', 107),
@@ -297,18 +300,28 @@ def main(argv):
             ProtocolMessage('ServerHelloDone', 25)
         ],
         [
+            ProtocolMessage('ACK', 5)  
+        ],
+        [
             ProtocolMessage('Certificate', 834),
             ProtocolMessage('ClientKeyExchange', 91),
             ProtocolMessage('CertificateVerify', 97),
             ProtocolMessage('ChangeCipherSpec', 13),
             ProtocolMessage('Finished', 37)
         ],
-
+        [
+            ProtocolMessage('ACK', 5)  
+        ],
+        [
+            ProtocolMessage('ChangeCipherSpec', 13),
+            ProtocolMessage('Finished', 37)
+        ]
     ]
+
 
     HandshakeList=[]
 
-    MultipleHandshakes(flights,200,HandshakeList,'linear',LossRate=0.2)
+    MultipleHandshakes(flights,1000,HandshakeList,'exponential',LossRate=0)
 
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
@@ -325,10 +338,45 @@ if __name__ == "__main__":
     main(sys.argv[1:]);
 
 
+    
+# ClientHello       --->
+#                   <--- ServerHello
+# ACK               --->
+#                   <--- Certificate
+# ACK               --->
+#                   <--- ServerKeyExchange
+# ACK               --->
+#                   <--- CertificateRequest
+# ACK               --->
+#                   <--- ServerHelloDone
+# Certificate       --->
+#                   <--- ACK
+# ClientKeyExchange --->
+#                   <--- ACK
+# CertificateVerify --->
+#                   <--- ACK
+# ChangeCipherSpec  --->
+#                   <--- ACK
+# Finished          --->
+#                   <--- ChangeCipherSpec
+# ACK               --->
+#                   <--- Finished
 
-
-
-
+    
+# ClientHello       --->
+#                   <--- ServerHello
+#                   <--- Certificate
+#                   <--- ServerKeyExchange
+#                   <--- CertificateRequest
+#                   <--- ServerHelloDone
+# Certificate       --->
+# ClientKeyExchange --->
+# CertificateVerify --->
+# ChangeCipherSpec  --->
+# Finished          --->
+#                   <--- ChangeCipherSpec
+#                   <--- Finished
+# ACK               --->
 
 
 

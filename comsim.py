@@ -469,8 +469,8 @@ class GenericClientServerAgent(ProtocolAgent):
         strRTO = ''
         if (flight + 1) < len(self.flights):
             RTO = self.getTimeout(self.nTx[flight])
-            strRTO = ', RTO = {0:>.1f}s'.format(RTO)
             if RTO is not None:
+                strRTO = ', RTO = {0:>.1f}s'.format(RTO)
                 self.scheduler.registerEventRel(Callback(
                         self.checkFlight, flight=flight), RTO)
 
