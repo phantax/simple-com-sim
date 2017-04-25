@@ -118,13 +118,18 @@ class LoggingClient(object):
         self.logger = logger
 
     def log(self, text):
-        if self.logger:
-            timeOnce =  self.scheduler.getTimeOnce()       
-            if timeOnce is not None:
-                header = '[{0:>.3f}s]'.format(timeOnce)
-            else:
-                header = '*'
-            self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
+        if not self.logger:
+            return
+        # Print the current only once for each registered event
+        timeOncePerEvent =  self.scheduler.getTimeOncePerEvent()       
+        if timeOncePerEvent is not None:
+            # >>> First log line for current event >>>
+            header = '[{0:>.3f}s]'.format(timeOncePerEvent)
+        else:
+            # >>> The was a log line for the same event before
+            # Means same time as previous line
+            header = '*'
+        self.logger.log(header, '{0}: {1}'.format(self.getName(), text))
 
 
 class Scheduler(object):
@@ -134,7 +139,7 @@ class Scheduler(object):
 
     def reset(self):
         self.time = 0.
-        self.timeOnce = None
+        self.timeOncePerEvent = None
         self.queue = Queue.PriorityQueue()
 
     def registerEventAbs(self, event, time, priority=0):
@@ -149,10 +154,10 @@ class Scheduler(object):
     def getTime(self):
         return self.time
 
-    def getTimeOnce(self):
-        timeOnce = self.timeOnce
-        self.timeOnce = None
-        return timeOnce
+    def getTimeOncePerEvent(self):
+        timeOncePerEvent = self.timeOncePerEvent
+        self.timeOncePerEvent = None
+        return timeOncePerEvent
 
     def done(self):
         return self.queue.empty()
@@ -173,7 +178,7 @@ class Scheduler(object):
 
         # proceed current time to event time
         self.time = time
-        self.timeOnce = time
+        self.timeOncePerEvent = time
 
         # execute the event
         event.execute()
