@@ -3,7 +3,6 @@
 import sys
 from comsim import *
 import math
-import numpy as np
 from collections import OrderedDict
 
 
@@ -96,9 +95,9 @@ def main(argv):
     #timeouts = None
     timeouts = lambda i: 10 * (2**i)
 
-    blocker = BlockingAgent('.blocker', scheduler, 500., 0.001, min_sep_time = 0.00099, queuing=False, logger=logger)
-    server = GenericServerAgent('server1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
-    client = GenericClientAgent('client1', scheduler, flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
+    blocker = BlockingAgent(scheduler, '.blocker', 500., 0.001, min_sep_time = 0.00099, queuing=False, logger=logger)
+    server = GenericServerAgent(scheduler, 'server1', flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
+    client = GenericClientAgent(scheduler, 'client1', flights, timeouts=timeouts, logger=logger, onComplete=blocker.stop)
 
     medium.registerAgent(blocker, 0)
     medium.registerAgent(server)

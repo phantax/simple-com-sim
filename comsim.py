@@ -112,19 +112,24 @@ class Callback(Event):
         self.callback(**self.pars)
 
 
-class LoggingClient(object):
+class SimulationAgent(object):
 
-    def __init__(self, logger):
+    def __init__(self, scheduler, logger=None):
+        self.scheduler = scheduler
         self.logger = logger
+
+    def getName(self):
+        return None
 
     def log(self, text):
         if not self.logger:
+            # >>> No logger available >>>
             return
-        # Print the current only once for each registered event
+        # Print the current time only once for each registered event
         timeOncePerEvent =  self.scheduler.getTimeOncePerEvent()       
         if timeOncePerEvent is not None:
             # >>> First log line for current event >>>
-            header = '[{0:>.3f}s]'.format(timeOncePerEvent)
+            header = '[{0:>2.3f}s]'.format(timeOncePerEvent)
         else:
             # >>> The was a log line for the same event before
             # Means same time as previous line
@@ -229,12 +234,41 @@ class ProtocolMessage(Message):
         return fragments
 
 
-class Agent(LoggingClient):
+class ProtocolLayer(SimulationAgent):
 
-    def __init__(self, name, scheduler, **params):
-        LoggingClient.__init__(self, params.get('logger', None))
+    def __init__(self):
+        self.upperLayer = []
+        self.lowerLayer = []
+        
+    def receiveMessage(self, message, caller):
+        if caller not in self.lowerLayer:
+            raise Exception('receiveMessage(...): Unknown caller')
+        
+    def sendMessage(self, message, caller):
+        if caller not in self.upperLayer:
+            raise Exception('sendMessage(...): Unknown caller')
+
+
+class MacLayer(ProtocolLayer):
+
+    def __init__(self):
+        self.upperLayer = []
+        self.media = []
+        
+    def receiveMessage(self, message, caller):
+        if caller not in self.lowerLayer:
+            raise Exception('ProtocolLayer.receiveMessage(...): Unknown caller')
+        
+    def sendMessage(self, message, caller):
+        if caller not in self.upperLayer:
+            raise Exception('ProtocolLayer.sendMessage(...): Unknown caller')
+    
+
+class Agent(SimulationAgent):
+
+    def __init__(self, scheduler, name, **params):
+        SimulationAgent.__init__(self, scheduler, params.get('logger', None))
         self.name = name
-        self.scheduler = scheduler
         self.medium = None
 
         medium = params.get('medium', None)
@@ -258,8 +292,8 @@ class Agent(LoggingClient):
 
 class BlockingAgent(Agent):
 
-    def __init__(self, name, scheduler, frequency, duration, **params):
-        Agent.__init__(self, name, scheduler, **params)
+    def __init__(self, scheduler, name, frequency, duration, **params):
+        Agent.__init__(self, scheduler, name, **params)
         self.running = False
         self.queue = 0
         self.withhold = False
@@ -340,8 +374,8 @@ class BlockingAgent(Agent):
 
 class ProtocolAgent(Agent):
 
-    def __init__(self, name, scheduler, **params):
-        Agent.__init__(self, name, scheduler, **params)
+    def __init__(self, scheduler, name, **params):
+        Agent.__init__(self, scheduler, name, **params)
         self.txQueue = collections.deque()
         self.txCount = 0
         self.rxCount = 0
@@ -413,9 +447,9 @@ class ProtocolAgent(Agent):
 
 class GenericClientServerAgent(ProtocolAgent):
 
-    def __init__(self, name, scheduler, flights, **kwparam):
+    def __init__(self, scheduler, name, flights, **kwparam):
 
-        ProtocolAgent.__init__(self, name, scheduler, **kwparam)
+        ProtocolAgent.__init__(self, scheduler, name, **kwparam)
 
         # the flight structure defining the communication sequence
         self.flights = flights
@@ -641,9 +675,9 @@ class GenericClientServerAgent(ProtocolAgent):
 class GenericClientAgent(GenericClientServerAgent):
 
 
-    def __init__(self, name, scheduler, flightStructure, **kwparam):
+    def __init__(self, scheduler, name, flightStructure, **kwparam):
         GenericClientServerAgent.__init__(
-                self, name, scheduler, flightStructure, **kwparam)
+                self, scheduler, name, flightStructure, **kwparam)
 
     def trigger(self):
         self.currentFlight = 0
@@ -656,22 +690,22 @@ class GenericClientAgent(GenericClientServerAgent):
 
 class GenericServerAgent(GenericClientServerAgent):
 
-    def __init__(self, name, scheduler, flightStructure, **kwparam):
+    def __init__(self, scheduler, name, flightStructure, **kwparam):
         GenericClientServerAgent.__init__(
-                self, name, scheduler, flightStructure, **kwparam)
+                self, scheduler, name, flightStructure, **kwparam)
 
     def isTXFlight(self, flight):
         # Server transmit odd flight numbers (1, 3, ...)
         return (flight % 2) == 1
 
 
-class Medium(LoggingClient):
+class Medium(SimulationAgent):
 
     priorityReceive = 0
     priorityUnblock = 1
 
     def __init__(self, scheduler, **params):
-        LoggingClient.__init__(self, params.get('logger', None))
+        SimulationAgent.__init__(self, params.get('logger', None))
         self.scheduler = scheduler
         self.agents = {}
         self.sortedAgents = []
