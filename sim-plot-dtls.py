@@ -103,7 +103,10 @@ def Superfluous_Data(flights,ClientData,ServerData):
 
     SuperFluous_data=sum(superfluousData_list)
 
-    return SuperFluous_data
+    if  SuperFluous_data >= 0:
+        return SuperFluous_data
+    else:
+        return 0
 
 #
 #_______________________________________________________________________________
@@ -135,7 +138,7 @@ def calculationsForPlots(flights,RetrasmissionCriteria):
 
     Loss_Rate_list=[]
 
-    while Loss_Rate<4e-4:
+    while Loss_Rate<5e-4:
         Loss_Rate+=0.5e-4
         Loss_Rate_list.append(Loss_Rate)
         tmp_list=[]
@@ -172,7 +175,7 @@ def calculationsForPlots(flights,RetrasmissionCriteria):
 
 def plot_All_Handshakes(RetransmissionCriteria,Comparison,*param):
     
-    Loss_Rate_list=[0.5e-4,1e-4,1.5e-4,2e-4,2.5e-4,3e-4,3.5e-4,4e-4]
+    Loss_Rate_list=[0.5e-4,1e-4,1.5e-4,2e-4,2.5e-4,3e-4,3.5e-4,4e-4,4.5e-4,5e-4]
     ylabel=['Mean','Variance','Standard deviation','Median','0.25-Quantile', \
             '0.75-Quantile']
 
@@ -181,6 +184,11 @@ def plot_All_Handshakes(RetransmissionCriteria,Comparison,*param):
         counter=len(param)
         while counter > 0:
             templist = []
+            l=param[len(param) - counter]
+            for ii in l:
+                print '#'
+                for e in ii:
+                    print str(e)
             templist=calculationsForPlots(param[len(param) - counter], \
                     RetransmissionCriteria)
             ListOfStats.append(templist)
@@ -243,8 +251,8 @@ def plotHistogram(HandshakeTimesList):
     
 
 #    bins = np.linspace(8,1000,10)
-    if max(HandshakeTimesList)-min(HandshakeTimesList)>1000:
-        plt.xscale('log')
+#    if max(HandshakeTimesList)-min(HandshakeTimesList)>1000:
+#        plt.xscale('log')
 		
     plt.hist(HandshakeTimesList, bins='auto', alpha=0.5, label='1')
     plt.title("Histogram")
@@ -288,6 +296,26 @@ def ackversion(flightStructure,version):
 #_______________________________________________________________________________
 #
 
+def boxplot(flights):
+
+    Loss_Rate=0
+    result=[]
+    while Loss_Rate<4e-4:
+        Loss_Rate+=0.5e-4
+        temp_list=[]
+        MultipleHandshakes(flights,1000,temp_list,'exponential',LossRate=Loss_Rate)
+        result.append(temp_list)
+    print result
+    plt.boxplot(result,0,'')
+    plt.xticks([1,2,3,4,5,6,7,8],[0.5e-4,1e-4,1.5e-4,2e-4,2.5e-4,3e-4,3.5e-4,4e-4])
+    plt.xlabel('Bit Loss Rate')
+    plt.ylabel('Handshake Time (s)')
+    plt.show()
+
+#
+#_______________________________________________________________________________
+#
+
 def main(argv):
     flights = [
         [
@@ -314,41 +342,8 @@ def main(argv):
 
     ]
 
-    flights2 = [
-        [
-            ProtocolMessage('ClientHello', 87)
-        ],
-        [
-            ProtocolMessage('ACK', 5)  
-        ],
-        [
-            ProtocolMessage('ServerHello', 107),
-            ProtocolMessage('Certificate', 834),
-            ProtocolMessage('ServerKeyExchange', 165),
-            ProtocolMessage('CertificateRequest', 71),
-            ProtocolMessage('ServerHelloDone', 25)
-        ],
-        [
-            ProtocolMessage('ACK', 5)  
-        ],
-        [
-            ProtocolMessage('Certificate', 834),
-            ProtocolMessage('ClientKeyExchange', 91),
-            ProtocolMessage('CertificateVerify', 97),
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
-        ],
-        [
-            ProtocolMessage('ACK', 5)  
-        ],
-        [
-            ProtocolMessage('ChangeCipherSpec', 13),
-            ProtocolMessage('Finished', 37)
-        ]
-    ]
 
-
-#    HandshakeList=[]
+    HandshakeList=[]
 
 #    res=ackversion(flights,2)
 #    for i in res:
@@ -357,15 +352,26 @@ def main(argv):
 #            print str(e)
 
 
-#    MultipleHandshakes(flights,1000,HandshakeList,'exponential',LossRate=0)
+#    i=0
+#    while i<=5e-4:
+#        i+=1e-4
 
+    MultipleHandshakes(ackversion(flights,1),1000,HandshakeList,'exponential',LossRate=5e-4)
+#        plotHistogram(HandshakeList)
+#        HandshakeList=[]
+
+
+#    boxplot(ackversion(flights,1))
 #    print HandshakeList
 #    plotHistogram(HandshakeList)
 #    plot_Mean_Variance_Median_Std_Against_LossRate(flights,1)
 
 #    Handshake(ackversion(flights,1),HandshakeList)
-    plot_All_Handshakes('exponential',0,flights,ackversion(flights,1),ackversion(flights,2))
+#    plot_All_Handshakes('exponential',0,flights)
+#    plot_All_Handshakes('exponential',0,ackversion(flights,1),flights)
 
+
+#    plotHistogram(HandshakeList)
 #    calculationsForPlots(flights,'linear')
 #
 # _____________________________________________________________________________
