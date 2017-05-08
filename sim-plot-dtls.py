@@ -7,7 +7,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import OrderedDict
 import json
-
+import csv
+import os
+import datetime
 
 class Logger(object):
 
@@ -64,6 +66,7 @@ def Handshake(flights,listOfTimes,RetransmissionCriteria='exponential', \
     tempDict['HS-Time']=handshaketime
     tempDict['Total-Data']=client.txCount + server.txCount 
     tempDict['SFData']=Superfluous_Data(flights,client.nRx,server.nRx) 
+    tempDict["Max Retransmit"]=max(client.nTx)-1
 
     return tempDict
     
@@ -111,7 +114,77 @@ def Superfluous_Data(flights,ClientData,ServerData):
 #
 #_______________________________________________________________________________
 #
+def writing(inputlist,LossRate):
 
+    datafield=[]
+    tempwritebuffer=[]
+    currentPath=os.path.dirname(os.path.realpath(__file__))
+    OutputPath=os.path.join(currentPath,"Output")
+    try:
+        os.makedirs(OutputPath)
+    except OSError:
+        pass
+    CurrentDate=datetime.datetime.now().strftime("%B_%d_%Y")
+    CurrentTime=datetime.datetime.now().strftime("%I:%M:%S%P") 
+
+    DateFolderPath=os.path.join(OutputPath,CurrentDate)
+    try:
+        os.makedirs(DateFolderPath)
+    except OSError:
+        pass
+
+    dest_dir=os.path.join(DateFolderPath,CurrentTime)
+    try:
+        os.makedirs(dest_dir)
+    except OSError:
+        pass
+    
+    path=os.path.join(dest_dir,"Outputfile")
+
+    with open(path,'w') as file:
+		writer=csv.writer(file,delimiter=',')
+		writer.writerow(["LossRate="+str(LossRate)])
+		for keys in sorted(inputlist[0]):
+			datafield.append(keys)
+		writer.writerow(datafield)
+		for dicts in inputlist:
+			for keys in sorted(dicts):
+				tempwritebuffer.append(dicts[keys])
+			writer.writerow(tempwritebuffer)
+			tempwritebuffer=[]
+#
+#_______________________________________________________________________________
+#
+
+def reading(infile,listofdata,headerdata):
+    temp={}
+    with open(infile,"r") as file:
+        reader=csv.reader(file,delimiter=",")
+        header = reader.next()
+        for k in header:
+            datasplit=k.split('=')
+            headerdata[datasplit[0]]=float(datasplit[1])
+
+#        dd=header[0].split('=')
+
+ #       headerdata.append(float(dd[1]))
+        datafields=reader.next()
+
+        for i in reader:
+            x=0
+            while x<len(datafields):
+                try:
+                    temp[datafields[x]]=float(i[x])     
+                except ValueError:
+                    temp[datafields[x]]=None
+                x+=1
+            listofdata.append(temp)
+            temp={}
+
+
+#
+#_______________________________________________________________________________
+#
 def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
         ,LossRate=0):
     ExportData=[]
@@ -120,9 +193,10 @@ def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
         result=Handshake(flights,listOfTimes,RetransmissionCriteria=Retransmit,\
                 LossRate=LossRate)
         ExportData.append(result)
-    
-    with open('Output_Data','w') as outputfile:
-        json.dump(ExportData,outputfile,sort_keys=True,indent=1)
+    writing(ExportData,LossRate)
+    return ExportData  
+#    with open('Output_Data','w') as outputfile:
+#        json.dump(ExportData,outputfile,sort_keys=True,indent=1)
 
 
 #
@@ -356,7 +430,12 @@ def main(argv):
 #    while i<=5e-4:
 #        i+=1e-4
 
-    MultipleHandshakes(ackversion(flights,1),1000,HandshakeList,'exponential',LossRate=5e-4)
+#    MultipleHandshakes(ackversion(flights,1),10,HandshakeList,'exponential',LossRate=1e-4)
+    lr={}
+    listal=[]
+    reading("Outputfile",listal,lr)    
+    print "LR: ",lr
+    print listal
 #        plotHistogram(HandshakeList)
 #        HandshakeList=[]
 
