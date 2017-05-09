@@ -114,7 +114,7 @@ def Superfluous_Data(flights,ClientData,ServerData):
 #
 #_______________________________________________________________________________
 #
-def writing(inputlist,LossRate):
+def writing(inputlist,**kwargs):
 
     datafield=[]
     tempwritebuffer=[]
@@ -143,9 +143,27 @@ def writing(inputlist,LossRate):
 
     with open(path,'w') as file:
 		writer=csv.writer(file,delimiter=',')
-		writer.writerow(["LossRate="+str(LossRate)])
+		headerString=[]
+		saved_args=locals()
+		count=0;
+		for i in  saved_args['kwargs']:
+		    count+=1
+		    temp=str(i)+'='+str(saved_args['kwargs'][i])
+		    print i,saved_args['kwargs'][i]
+		    headerString.append(temp)
+#		    if count < len(kwargs):
+#		        headerString+=','
+      
+            
+
+                
+
+#        print headerString
+		print headerString
+		writer.writerow(headerString)
 		for keys in sorted(inputlist[0]):
 			datafield.append(keys)
+			print datafield
 		writer.writerow(datafield)
 		for dicts in inputlist:
 			for keys in sorted(dicts):
@@ -193,7 +211,7 @@ def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
         result=Handshake(flights,listOfTimes,RetransmissionCriteria=Retransmit,\
                 LossRate=LossRate)
         ExportData.append(result)
-    writing(ExportData,LossRate)
+    writing(ExportData,Lossrate=LossRate)
     return ExportData  
 #    with open('Output_Data','w') as outputfile:
 #        json.dump(ExportData,outputfile,sort_keys=True,indent=1)
@@ -430,12 +448,16 @@ def main(argv):
 #    while i<=5e-4:
 #        i+=1e-4
 
-#    MultipleHandshakes(ackversion(flights,1),10,HandshakeList,'exponential',LossRate=1e-4)
-    lr={}
-    listal=[]
-    reading("Outputfile",listal,lr)    
-    print "LR: ",lr
-    print listal
+    MultipleHandshakes(ackversion(flights,1),10,HandshakeList,'exponential',LossRate=1e-4)
+
+#    Header={}
+#    data=[]
+#    reading('/home/talha/Code2/simple-com-sim/Output/May_09_2017/03:17:29pm/Outputfile',data,Header)
+
+#    print 'Header :',Header
+#    print 'Data :',data
+    
+
 #        plotHistogram(HandshakeList)
 #        HandshakeList=[]
 
