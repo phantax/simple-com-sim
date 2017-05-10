@@ -2,9 +2,16 @@ import os
 import datetime
 import csv
 
+# Getting current date and time 
 CurrentDate=datetime.datetime.now().strftime("%B_%d_%Y")
-CurrentTime=datetime.datetime.now().strftime("%I:%M:%S%P") 
+CurrentTime=datetime.datetime.now().strftime("%I:%M:%S%P")
+
+# Counter to keep track of total number of output files to be generated 
 callcount=0
+
+# Writes inputlist(List of dictionaries) into a csv format
+# and all keyword arguments as header of the csv file
+
 def writing(inputlist,**kwargs):
     global callcount
     callcount=callcount+1
@@ -12,11 +19,11 @@ def writing(inputlist,**kwargs):
     tempwritebuffer=[]
     currentPath=os.path.dirname(os.path.realpath(__file__))
     OutputPath=os.path.join(currentPath,"Output")
+
     try:
         os.makedirs(OutputPath)
     except OSError:
         pass
-
 
     DateFolderPath=os.path.join(OutputPath,CurrentDate)
     try:
@@ -42,14 +49,7 @@ def writing(inputlist,**kwargs):
 		    temp=str(i)+'='+str(saved_args['kwargs'][i])
 		    print i,saved_args['kwargs'][i]
 		    headerString.append(temp)
-#		    if count < len(kwargs):
-#		        headerString+=','
-      
-            
 
-                
-
-#        print headerString
 		print headerString
 		writer.writerow(headerString)
 		for keys in sorted(inputlist[0]):
@@ -65,18 +65,23 @@ def writing(inputlist,**kwargs):
 #_______________________________________________________________________________
 #
 
-def reading(infile,listofdata,headerdata):
+
+# Reads the csv file at path 'infilepath'
+# writes the csv file's 'header parameters' into header data
+# and writes the csv data as a 'list of dictionaries' into 'listofdata'
+def reading(infilepath,listofdata,headerdata):
     temp={}
-    with open(infile,"r") as file:
+    with open(infilepath,"r") as file:
         reader=csv.reader(file,delimiter=",")
         header = reader.next()
         for k in header:
             datasplit=k.split('=')
-            headerdata[datasplit[0]]=float(datasplit[1])
+            
+            try:
+                headerdata[datasplit[0]]=float(datasplit[1])
+            except ValueError:
+                headerdata[datasplit[0]]=datasplit[1]                
 
-#        dd=header[0].split('=')
-
- #       headerdata.append(float(dd[1]))
         datafields=reader.next()
 
         for i in reader:
