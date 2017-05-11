@@ -126,7 +126,7 @@ def MultipleHandshakes(flights,noOfTimes,listOfTimes,Retransmit='exponential'\
         result=Handshake(flights,listOfTimes,RetransmissionCriteria=Retransmit,\
                 LossRate=LossRate)
         ExportData.append(result)
-    writing(ExportData,Lossrate=LossRate)
+    writing(ExportData,Lossrate=LossRate,RetransmissionCriteria=Retransmit)
     return ExportData  
 #    with open('Output_Data','w') as outputfile:
 #        json.dump(ExportData,outputfile,sort_keys=True,indent=1)
@@ -362,13 +362,14 @@ def main(argv):
 #    i=0
 #    while i<=5e-4:
 #        i+=1e-4
-    calculationsForPlots(flights,'exponential')
-#    Header={}
-#    data=[]
-#    reading('/home/talha/Code2/simple-com-sim/Output/May_09_2017/03:17:29pm/Outputfile',data,Header)
-
-#    print 'Header :',Header
-#    print 'Data :',data
+#    calculationsForPlots(flights,'exponential')
+    Header={}
+    data=[]
+    reading('/home/talha/Code2/simple-com-sim/Output/May_11_2017/11:51:09am/Outputfile1',data,Header)
+#    MultipleHandshakes(flights,100000,HandshakeList,Retransmit='exponential'\
+#            ,LossRate=1e-4)
+    print 'Header :',Header
+    print 'Data :',data[99999]
     
 
 #        plotHistogram(HandshakeList)
